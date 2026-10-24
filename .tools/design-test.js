@@ -225,6 +225,23 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   });
   fail('a detuned line feeds nova slower', novaEco.detunedGain < novaEco.healthyGain * 0.6, novaEco);
 
+  const regen = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    p.overdrive = 0; p.nova = 0; p.invuln = 9999;
+    const dt = 1 / 60;
+    for (let i = 0; i < 60 * 10; i++) p.update(dt, g.input);
+    return { after10s: Math.round(p.nova) };
+  });
+  fail('nova builds up on its own (~1.8/s)', regen.after10s >= 14 && regen.after10s <= 22, regen);
+
+  const tiers = await page.evaluate(() => {
+    const mk = (s) => { const b = new SF.Boss(s); return { tier: b.tier, spd: Math.round(b.bulletSpeed()) }; };
+    return { s1: mk(1), s5: mk(5), s6: mk(6), s10: mk(10), s11: mk(11) };
+  });
+  fail('intensity ramps in 5-sector tiers',
+    tiers.s1.tier === 0 && tiers.s5.tier === 0 && tiers.s6.tier === 1 && tiers.s10.tier === 1 && tiers.s11.tier === 2
+    && tiers.s1.spd === tiers.s5.spd && tiers.s6.spd > tiers.s5.spd, tiers);
+
   const hud = await page.evaluate(() => {
     const btn = document.getElementById('btnNova');
     const chip = document.getElementById('weaponChip');
