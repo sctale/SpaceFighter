@@ -414,6 +414,12 @@ kbd {
   font-size: 9px;
   letter-spacing: .14em;
   color: var(--ink-dim);
+  /* the phase chip must never be squeezed onto a second line */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .boss-phase {
   margin-left: auto;
@@ -421,6 +427,8 @@ kbd {
   font-size: 9px;
   letter-spacing: .14em;
   color: var(--rose);
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .boss-phase.is-critical {
   color: var(--gold);

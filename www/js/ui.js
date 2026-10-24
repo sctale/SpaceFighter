@@ -308,7 +308,7 @@
         }
         const fill = Math.max(0, b.hp / b.maxHp);
         el.bossFill.style.transform = 'scaleX(' + fill + ')';
-        const phaseTag = 'P' + b.phase + (b.desperate ? ' · 临界' : '');
+        const phaseTag = 'P' + b.phase + (b.desperate ? '·临界' : '');
         if (b.phase !== this.cache.bossPhase || this.cache.bossDesperate !== !!b.desperate) {
           el.bossPhase.textContent = phaseTag;
           el.bossPhase.classList.toggle('is-critical', !!b.desperate);
