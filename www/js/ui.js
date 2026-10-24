@@ -19,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -33,10 +33,10 @@
         stage: $('stage'),
         score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), sector: $('hudSector'), sectorName: $('hudSectorName'),
         lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'), weaponMod: $('weaponMod'),
+        weaponRing: $('weaponRing'), resonanceChips: $('resonanceChips'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
         comboBox: $('comboBox'), comboMult: $('comboMult'), comboCount: $('comboCount'), comboFill: $('comboFill'),
-        novaCluster: $('novaCluster'), novaPct: $('novaPct'), novaFill: $('novaFill'), novaKey: $('novaKey'),
-        dashChip: $('dashChip'), dashFill: $('dashChip').querySelector('b'),
+        novaPct: $('novaPct'),
         bossPanel: $('bossPanel'), bossName: $('bossName'), bossTitle: $('bossTitle'), bossPhase: $('bossPhase'), bossFill: $('bossFill'), bossPattern: $('bossPattern'),
         announce: $('announce'), announceTitle: $('announceTitle'), announceSub: $('announceSub'),
         hint: $('gameHint'), toast: $('toast'),
@@ -50,11 +50,12 @@
         btnDash: $('btnDash'), btnNova: $('btnNova'),
         buildSummary: $('buildSummary'),
         toggleSound: $('toggleSound'), toggleShake: $('toggleShake'), toggleFx: $('toggleFx'), toggleHaptic: $('toggleHaptic'),
-        hud: $('hud'), touchActions: $('touchActions'),
+        hud: $('hud'),
       };
 
       this.buildWeaponPips();
       this.buildShieldPips();
+      this.buildResonance();
       this.bind();
       this.applySettings();
       this.updateMenuStats();
@@ -135,6 +136,13 @@
       }
     }
 
+    buildResonance() {
+      const wrap = this.el.resonanceChips;
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      for (let i = 0; i < 5; i++) wrap.appendChild(document.createElement('b'));
+    }
+
     setState(state) {
       this.el.stage.dataset.state = state;
       const visible = state === 'playing' || state === 'paused';
@@ -180,7 +188,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -218,16 +226,40 @@
         el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
         Array.from(el.weaponPips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.level));
         el.weaponChip.disabled = p.unlockedWeapons().length < 2;
+        el.weaponChip.classList.remove('is-prism', 'is-swarm');
+        if (p.activeWeapon !== 'pulse') el.weaponChip.classList.add('is-' + p.activeWeapon);
         this.cache.weapon = p.level;
         this.cache.weaponMode = p.activeWeapon;
       }
       if (p) {
         const unlocked = p.unlockedWeapons().length;
-        const mod = unlocked > 1 ? '切换 ' + unlocked + ' 种' : '';
+        const mod = unlocked > 1 ? '×' + unlocked : '';
         if (mod !== this.cache.weaponMod) {
           this.cache.weaponMod = mod;
           el.weaponMod.hidden = !mod;
           el.weaponMod.textContent = mod;
+        }
+        // charge ring + detune state: the weapon tells you when to swap
+        const w = p.weapons[p.activeWeapon];
+        const charge = Math.round(w.charge);
+        if (charge !== this.cache.weaponCharge && el.weaponRing) {
+          el.weaponRing.style.setProperty('--pct', charge);
+          this.cache.weaponCharge = charge;
+        }
+        if (w.detuned !== this.cache.weaponDetuned) {
+          el.weaponChip.classList.toggle('is-detuned', w.detuned);
+          el.weaponChip.classList.toggle('is-low', !w.detuned && w.charge < 40);
+          if (w.detuned) el.weaponName.textContent = '失谐 · ' + WEAPON_NAMES[p.activeWeapon][0];
+          else if (this.cache.weaponDetuned !== null) {
+            const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
+            el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
+          }
+          this.cache.weaponDetuned = w.detuned;
+        }
+        if (p.resonance !== this.cache.resonance && el.resonanceChips) {
+          Array.from(el.resonanceChips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.resonance));
+          el.resonanceChips.classList.toggle('is-hot', p.resonance >= 3);
+          this.cache.resonance = p.resonance;
         }
         if (p.shieldCharges !== this.cache.shield) {
           this.cache.shield = p.shieldCharges;
@@ -237,19 +269,20 @@
         const novaRounded = Math.round(p.nova);
         if (novaRounded !== this.cache.nova) {
           el.novaPct.textContent = novaRounded + '%';
-          el.novaFill.style.width = p.nova + '%';
+          el.btnNova.style.setProperty('--pct', Math.round(p.nova));
           this.cache.nova = novaRounded;
         }
         const ready = p.nova >= 100 && p.overdrive <= 0;
         if (ready !== this.cache.ready) {
-          el.novaCluster.classList.toggle('is-ready', ready);
           el.btnNova.classList.toggle('is-ready', ready);
           this.cache.ready = ready;
         }
-        const dashRatio = Math.max(0, 1 - p.dashCd / 1.7);
-        el.dashFill.style.transform = 'scaleX(' + dashRatio + ')';
-        el.btnDash.classList.toggle('is-cooling', p.dashCd > 0.05);
-        el.btnDash.style.opacity = p.dashCd > 0.05 ? '0.4' : '';
+        const dashRatio = Math.round(Math.max(0, 1 - p.dashCd / 1.7) * 100);
+        if (dashRatio !== this.cache.dash) {
+          el.btnDash.style.setProperty('--pct', dashRatio);
+          el.btnDash.classList.toggle('is-cooling', p.dashCd > 0.05);
+          this.cache.dash = dashRatio;
+        }
       }
 
       if (game.combo > 0) {
@@ -384,7 +417,6 @@
         this.el.toggleHaptic.setAttribute('aria-checked', s.haptic !== false ? 'true' : 'false');
       }
       document.body.classList.toggle('reduce-fx', !!s.lowFx);
-      this.el.novaKey.textContent = 'X';
     }
 
     showResult(data) {

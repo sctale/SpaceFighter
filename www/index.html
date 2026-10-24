@@ -51,34 +51,31 @@
         <span class="boss-pattern" id="bossPattern"></span>
       </div>
 
-      <footer class="hud-bottom">
-        <div class="hud-left">
+      <footer class="hud-bottom" id="hudBottom">
+        <div class="dash-left">
           <div class="lives" id="hudLives" aria-label="剩余生命"></div>
           <button class="weapon-chip" id="weaponChip" type="button" aria-label="切换武器">
-            <span class="weapon-dot"></span>
-            <span id="weaponName">脉冲炮</span>
+            <span class="weapon-ring" id="weaponRing" aria-hidden="true"></span>
+            <span class="weapon-copy">
+              <span id="weaponName">脉冲炮</span>
+              <i class="weapon-pips" id="weaponPips"></i>
+            </span>
             <em class="weapon-mod" id="weaponMod" hidden></em>
-            <i class="weapon-pips" id="weaponPips"></i>
           </button>
+          <div class="resonance" id="resonanceChips" aria-label="共鸣层数"></div>
           <div class="shield-chip" id="shieldChip" hidden>
-            <span>护盾</span>
             <i class="shield-pips" id="shieldPips"></i>
           </div>
         </div>
-        <div class="nova-cluster" id="novaCluster">
-          <div class="nova-label"><span>NOVA</span><b id="novaPct">0%</b><em id="novaKey">X</em></div>
-          <div class="nova-track"><i id="novaFill"></i></div>
-          <span class="nova-ready" id="novaReady">星爆就绪</span>
-        </div>
-        <div class="hud-right">
-          <div class="dash-chip" id="dashChip"><span>DASH</span><i><b></b></i></div>
+        <div class="dash-right">
+          <button class="ring-btn ring-btn--dash" id="btnDash" type="button" aria-label="冲刺">
+            <span>冲刺</span><small>DASH</small>
+          </button>
+          <button class="ring-btn ring-btn--nova" id="btnNova" type="button" aria-label="释放星爆">
+            <span>星爆</span><small id="novaPct">0%</small>
+          </button>
         </div>
       </footer>
-
-      <div class="touch-actions" id="touchActions">
-        <button class="round-btn" id="btnDash" aria-label="冲刺">冲刺<small>DASH</small></button>
-        <button class="round-btn round-btn--nova" id="btnNova" aria-label="释放星爆">星爆<small>NOVA</small></button>
-      </div>
 
       <div class="announce" id="announce">
         <span class="announce-rule"></span>
@@ -134,7 +131,7 @@
           <div class="control-hint"><span class="hint-key">冲刺</span><span>穿弹短暂无敌</span></div>
         </div>
 
-        <p class="menu-foot">v2.3 · 三段 Boss 阶段 / 武器等级树 / 僚机翼位编队</p>
+        <p class="menu-foot">v2.4 · 弹速威力三角 / 蓄能换线 / 共鸣连携 / 翼位编队</p>
       </div>
     </section>
 
