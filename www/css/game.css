@@ -762,7 +762,9 @@ kbd {
 .toast {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--pad) + 176px + env(safe-area-inset-bottom));
+  /* stacked ABOVE the tutorial hint (186px) so a toast fired mid-hint
+     can never overlap it */
+  bottom: calc(var(--pad) + 232px + env(safe-area-inset-bottom));
   transform: translate(-50%, 8px);
   padding: 9px 16px;
   border-radius: 999px;
