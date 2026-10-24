@@ -393,26 +393,30 @@ kbd {
   animation: bossIn .5s var(--ease-out) both;
 }
 .boss-panel[hidden] { display: none; }
-.boss-meta { display: flex; align-items: baseline; gap: 8px; }
+.boss-meta { display: flex; align-items: baseline; gap: 6px; }
 .boss-tag {
   font-family: var(--font-mono);
   font-size: 8px;
-  letter-spacing: .2em;
+  letter-spacing: .14em;
   color: var(--rose);
   border: 1px solid rgba(255, 111, 145, 0.4);
   padding: 2px 5px;
   border-radius: 2px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .boss-meta strong {
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: .16em;
+  letter-spacing: .1em;
   color: var(--paper);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .boss-meta em {
   font-style: normal;
   font-size: 9px;
-  letter-spacing: .14em;
+  letter-spacing: .08em;
   color: var(--ink-dim);
   /* the phase chip must never be squeezed onto a second line */
   flex: 1 1 auto;
@@ -470,6 +474,9 @@ kbd {
   letter-spacing: .2em;
   color: rgba(255, 210, 122, 0.82);
   height: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity .18s var(--ease-out), transform .18s var(--ease-out);
