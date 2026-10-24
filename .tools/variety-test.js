@@ -75,7 +75,8 @@ const SHOTS = path.join(__dirname, 'shots');
   for (const mode of ['prism', 'swarm']) {
     const r = await page.evaluate((m) => {
       const g = __SF.game, p = g.player;
-      p.weaponMode = m; p.weaponTimer = 24; p.level = 5; p.overdrive = 0;
+      p.weapons[m].unlocked = true;
+      p.selectWeapon(m); p.level = 5; p.weapons[m].level = 5; p.overdrive = 0;
       p.drones.length = 0;
       g.playerBullets.length = 0;
       g.enemies.length = 0;

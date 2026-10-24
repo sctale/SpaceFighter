@@ -57,3 +57,7 @@ keystore.properties
 .vscode/
 .DS_Store
 Thumbs.db
+
+# scratch capture folders and one-off shot scripts
+shots/
+.tools/shot-*.js

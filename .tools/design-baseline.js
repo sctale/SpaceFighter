@@ -35,7 +35,7 @@ require('fs').mkdirSync(SHOTS, { recursive: true });
       });
     __SF.give('shield'); __SF.give('shield');
     __SF.give('drone'); __SF.give('drone'); __SF.give('drone');
-    __SF.give('core');
+    __SF.give('prism'); __SF.give('swarm');
     __SF.give('reflect');
     g.player.nova = 86;
     g.combo = 28;
@@ -118,7 +118,7 @@ require('fs').mkdirSync(SHOTS, { recursive: true });
   await sp.waitForTimeout(1300);
   await sp.screenshot({ path: path.join(SHOTS, '13-menu-small.png') });
   await sp.click('#btnStart');
-  await sp.evaluate(() => { __SF.give('core'); __SF.give('shield'); __SF.give('drone'); __SF.startBoss(); });
+  await sp.evaluate(() => { __SF.give('prism'); __SF.give('swarm'); __SF.give('shield'); __SF.give('drone'); __SF.startBoss(); });
   await sp.waitForTimeout(5000);
   await sp.screenshot({ path: path.join(SHOTS, '14-boss-small.png') });
 
