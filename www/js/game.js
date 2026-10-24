@@ -1079,6 +1079,7 @@
         player.reflectT = 0;
         player.grantInvuln(1.5);
         player.hitFlash = 0.4;
+        player.addNovaRaw(4);
         SF.Audio.sfx('playerHit');
         this.clearEnemyBullets(true);
         this.fx.explosion(player.x, player.y, 1.0, P.gold);
@@ -1096,6 +1097,7 @@
         player.shieldCharges--;
         player.grantInvuln(1.3);
         player.hitFlash = 0.4;
+        player.addNovaRaw(8);
         SF.Audio.sfx('playerHit');
         this.fx.explosion(player.x, player.y, 0.7, P.violet);
         this.fx.impact(player.x, player.y, P.violet, 2.1);
@@ -1115,6 +1117,9 @@
       this.lives = Math.max(0, this.lives - 1);
       this.combo = 0;
       this.comboTimer = 0;
+      // Pain feeds the star core: a hull hit is worth roughly 200 boss hits of
+      // charging, so a struggling pilot can bank a screen-clearing nova.
+      player.addNovaRaw(25);
       const lostDrone = player.applyHitPenalty();
       player.grantInvuln(2.8);
       player.x = SF.W / 2;
@@ -1126,6 +1131,7 @@
       this.clearEnemyBullets(true);
       this.fx.explosion(oldX, oldY, 1.35, P.rose);
       this.fx.explosion(oldX, oldY, 0.8, P.teal);
+      this.fx.text(oldX, oldY - 46, '星爆 +25', P.gold, 13, { life: 1 });
       this.fx.flash('255,111,145', 0.4);
       this.fx.shake(15);
       this.slowmo(0.3, 0.5);

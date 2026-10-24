@@ -416,6 +416,12 @@
       this.nova = clamp(this.nova + v * mul, 0, 100);
     }
 
+    // Pain-charging ignores the line's state: getting hit always pays out in full.
+    addNovaRaw(v) {
+      if (this.overdrive > 0) return;
+      this.nova = clamp(this.nova + v, 0, 100);
+    }
+
     unlockedWeapons() {
       return Object.keys(this.weapons).filter((k) => this.weapons[k].unlocked);
     }

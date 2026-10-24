@@ -242,6 +242,25 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     tiers.s1.tier === 0 && tiers.s5.tier === 0 && tiers.s6.tier === 1 && tiers.s10.tier === 1 && tiers.s11.tier === 2
     && tiers.s1.spd === tiers.s5.spd && tiers.s6.spd > tiers.s5.spd, tiers);
 
+  const hitNova = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    g.godMode = false;
+    p.nova = 0; p.overdrive = 0;
+    p.invuln = 0; p.dashT = 0; p.shieldCharges = 0; p.reflectT = 0;
+    g.playerHit();
+    const hullGain = Math.round(p.nova);
+    p.nova = 0; p.overdrive = 0; p.invuln = 0; p.dashT = 0;
+    p.shieldCharges = 1; p.reflectT = 0;
+    g.playerHit();
+    const shieldGain = Math.round(p.nova);
+    g.godMode = true;
+    p.shieldCharges = 0;
+    p.invuln = 9999;
+    return { hullGain, shieldGain, lives: g.lives };
+  });
+  fail('taking damage feeds the star core (hull > shield > 0)',
+    hitNova.hullGain >= 20 && hitNova.shieldGain >= 5 && hitNova.shieldGain < hitNova.hullGain, hitNova);
+
   const hud = await page.evaluate(() => {
     const btn = document.getElementById('btnNova');
     const chip = document.getElementById('weaponChip');
