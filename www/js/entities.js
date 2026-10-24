@@ -622,6 +622,10 @@
           this.overdrive = 0;
         }
       }
+      // The star core refills on its own, slowly — combat action tops it up faster.
+      if (this.overdrive <= 0 && this.alive) {
+        this.nova = clamp(this.nova + 1.8 * dt, 0, 100);
+      }
       if (this.dashCd > 0) this.dashCd = Math.max(0, this.dashCd - dt);
       if (this.dashT > 0) this.dashT -= dt;
       if (this.reflectT > 0) this.reflectT = Math.max(0, this.reflectT - dt);
@@ -1101,6 +1105,9 @@
       this.def = def;
       this.elite = !!opts.elite;
       this.sector = opts.sector || 1;
+      // Intensity climbs in 5-sector blocks, so early runs stay readable and
+      // each new tier is a step up you can feel.
+      this.tier = Math.min(3, Math.floor((this.sector - 1) / 5));
       this.size = def.size * (this.elite ? 1.22 : 1);
       this.maxHp = Math.round(def.hp * (1 + (this.sector - 1) * 0.16) * (this.elite ? 2.4 : 1));
       this.hp = this.maxHp;
@@ -1149,7 +1156,7 @@
       this.age += dt;
       this.flash = Math.max(0, this.flash - dt);
       this.spin += dt * 0.4;
-      const speedMul = 1 + (this.sector - 1) * 0.035;
+      const speedMul = 1 + this.tier * 0.14;
       const def = this.def;
 
       switch (def.pattern) {
@@ -1243,7 +1250,7 @@
           if (this.chargeT <= 0) {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.55, 1 - (this.sector - 1) * 0.045) * (this.elite ? 0.82 : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1);
             this.chargeT = 0;
           }
         } else if (this.fireTimer <= 0) {
@@ -1253,7 +1260,7 @@
           } else {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.55, 1 - (this.sector - 1) * 0.045) * (this.elite ? 0.82 : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1);
           }
         }
       }
@@ -1266,8 +1273,8 @@
     fire(sector) {
       if (!SF.Game.player) return;
       const pl = SF.Game.player;
-      const dif = 1 + (sector - 1) * 0.035;
-      const sp = Math.min(320, 165 * dif);
+      const dif = 1 + this.tier * 0.14;
+      const sp = Math.min(300, 150 * dif);
       const bx = this.x, by = this.y + this.size * 0.5;
       const aim = Math.atan2(pl.y - this.y, pl.x - this.x);
       const add = (ang, speed, kind, r, scale, extra) => {
@@ -1625,6 +1632,7 @@
       this.title = def.title;
       this.en = def.en;
       this.sector = sector;
+      this.tier = Math.min(3, Math.floor((sector - 1) / 5));
       this.size = def.size;
       this.maxHp = Math.round(def.hp * (1 + (sector - 1) * 0.85));
       this.hp = this.maxHp;
@@ -1782,7 +1790,7 @@
     }
 
     bulletSpeed() {
-      const base = Math.min(310, 178 + (this.sector - 1) * 7);
+      const base = 152 + this.tier * 46;
       return base * (this.phase === 3 ? 1.18 : this.phase === 2 ? 1.06 : 1);
     }
 
@@ -2015,7 +2023,7 @@
         case 'wallGap': {
           if (!a.data) a.data = { cols: Math.max(9, Math.round(SF.W / 40)), gap: 3, gapIdx: 0 };
           const d = a.data;
-          d.gap = this.phase === 3 ? 2 : 3;
+          d.gap = this.phase === 3 ? (this.tier === 0 ? 3 : 2) : (this.tier === 0 ? 4 : 3);
           d.cols = Math.max(9, Math.round(SF.W / 40));
           const step = SF.W / d.cols;
           const plan = () => {
@@ -2236,10 +2244,10 @@
         this.attackLabel = '';
         this.lockMove = false;
         // Phase 3 chains every third spell, and a desperate hull never pauses at all.
-        const chain = this.phase === 3 && (this.desperate || this.spellCount % 3 === 0);
+        const chain = this.phase === 3 && (this.desperate || this.spellCount % (this.tier === 0 ? 4 : 3) === 0);
         this.attackCd = chain ? 0.16 : Math.max(0.3,
           this.phase === 3 ? 0.42 : this.phase === 2 ? 0.62 : 0.85);
-        if (this.phase === 3 && SF.chance(this.desperate ? 0.9 : 0.65)) {
+        if (this.phase === 3 && SF.chance(this.desperate ? (this.tier === 0 ? 0.7 : 0.9) : (this.tier === 0 ? 0.45 : 0.65))) {
           this.ring(this.desperate ? 22 : 16, aim, spd * 0.75);
         }
       }

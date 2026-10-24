@@ -767,7 +767,7 @@
           const ny = (b.y - this.boss.y) / ry;
           if (nx * nx + ny * ny <= 1 && canHit(this.boss)) {
             this.boss.hit(b.dmg);
-            if (player) player.addNova(0.05);
+            if (player) player.addNova(0.12);
             this.fx.impact(b.x, b.y, this.boss.def.color, 1.15);
             consumeHit();
           }
@@ -782,6 +782,7 @@
             if (dx * dx + dy * dy < rr * rr && canHit(e)) {
               b.x -= b.vx * 0.016;
               const dead = e.hit(b.dmg, b.x, b.y);
+              if (player) player.addNova(0.06);
               if (dead) this.killEnemy(e);
               consumeHit();
               if (remove) break;
