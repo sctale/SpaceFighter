@@ -5,8 +5,12 @@
   'use strict';
   const SF = window.SF;
 
-  const WEAPON_NAMES = ['脉冲炮', '双联脉冲', '三叉星流', '四象阵列', '星瀑'];
-  const WEAPON_MODE_NAMES = { prism: '棱镜', swarm: '蜂群' };
+  const WEAPON_NAMES = {
+    pulse: ['脉冲炮', '双联脉冲', '三叉星流', '四象阵列', '星瀑'],
+    prism: ['棱镜', '双棱', '棱镜矩阵', '裂光', '终焉棱镜'],
+    swarm: ['蜂群', '双子蜂', '三蜂', '五蜂', '蜂后'],
+  };
+  const WEAPON_MODE_NAMES = { pulse: '脉冲', prism: '棱镜', swarm: '蜂群' };
 
   class UI {
     constructor() {
@@ -15,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -28,7 +32,7 @@
       this.el = {
         stage: $('stage'),
         score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), sector: $('hudSector'), sectorName: $('hudSectorName'),
-        lives: $('hudLives'), weaponName: $('weaponName'), weaponPips: $('weaponPips'), weaponMod: $('weaponMod'),
+        lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'), weaponMod: $('weaponMod'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
         comboBox: $('comboBox'), comboMult: $('comboMult'), comboCount: $('comboCount'), comboFill: $('comboFill'),
         novaCluster: $('novaCluster'), novaPct: $('novaPct'), novaFill: $('novaFill'), novaKey: $('novaKey'),
@@ -78,6 +82,9 @@
       click(this.el.btnQuit, () => g.toMenu());
       click(this.el.btnDash, () => g.tryDash());
       click(this.el.btnNova, () => g.tryNova());
+      click(this.el.weaponChip, () => {
+        if (g.player && g.player.cycleWeapon()) this.toast('武器切换 · ' + (WEAPON_MODE_NAMES[g.player.activeWeapon] || ''));
+      });
 
       click(this.el.toggleSound, () => {
         const next = !g.settings.sound;
@@ -151,7 +158,9 @@
       if (!p || !this.el.buildSummary) return;
       const droneLabels = { gunner: '脉冲', lance: '棱镜', aegis: '守护', swarm: '蜂群' };
       const chips = [];
-      chips.push(`<span class="is-weapon">${WEAPON_MODE_NAMES[p.weaponMode] || WEAPON_NAMES[Math.min(p.level - 1, 4)]}</span>`);
+      const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
+      chips.push(`<span class="is-weapon">${names[p.level - 1] || names[0]} LV.${p.level}</span>`);
+      if (p.unlockedWeapons().length > 1) chips.push(`<span>武器 ${p.unlockedWeapons().length}/3</span>`);
       if (p.shieldCharges > 0) chips.push(`<span class="is-shield">护盾 ${p.shieldCharges}/3</span>`);
       if (p.reflectT > 0) chips.push(`<span class="is-shield">力场 ${Math.ceil(p.reflectT)}s</span>`);
       p.drones.forEach((d) => chips.push(`<span>僚机 ${droneLabels[d.kind] || d.kind}</span>`));
@@ -171,7 +180,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', shield: -1, nova: -1, ready: null, combo: -1, mult: -1, bossPhase: 0, bossName: '', bossPattern: '' };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -204,20 +213,21 @@
         this.renderLives(game.lives);
         this.cache.lives = game.lives;
       }
-      if (p && p.level !== this.cache.weapon) {
-        el.weaponName.textContent = WEAPON_NAMES[Math.min(p.level - 1, 4)];
+      if (p && (p.level !== this.cache.weapon || p.activeWeapon !== this.cache.weaponMode)) {
+        const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
+        el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
         Array.from(el.weaponPips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.level));
+        el.weaponChip.disabled = p.unlockedWeapons().length < 2;
         this.cache.weapon = p.level;
+        this.cache.weaponMode = p.activeWeapon;
       }
       if (p) {
-        const mod = p.weaponMode !== 'pulse'
-          ? (WEAPON_MODE_NAMES[p.weaponMode] || '') + ' ' + Math.ceil(p.weaponTimer) + 's'
-          : '';
+        const unlocked = p.unlockedWeapons().length;
+        const mod = unlocked > 1 ? '切换 ' + unlocked + ' 种' : '';
         if (mod !== this.cache.weaponMod) {
           this.cache.weaponMod = mod;
           el.weaponMod.hidden = !mod;
           el.weaponMod.textContent = mod;
-          el.weaponName.parentElement.classList.toggle('is-modified', !!mod);
         }
         if (p.shieldCharges !== this.cache.shield) {
           this.cache.shield = p.shieldCharges;
@@ -279,11 +289,14 @@
         }
         const fill = Math.max(0, b.hp / b.maxHp);
         el.bossFill.style.transform = 'scaleX(' + fill + ')';
-        if (b.phase !== this.cache.bossPhase) {
-          el.bossPhase.textContent = 'P' + b.phase;
+        const phaseTag = 'P' + b.phase + (b.desperate ? ' · 临界' : '');
+        if (b.phase !== this.cache.bossPhase || this.cache.bossDesperate !== !!b.desperate) {
+          el.bossPhase.textContent = phaseTag;
+          el.bossPhase.classList.toggle('is-critical', !!b.desperate);
           this.cache.bossPhase = b.phase;
+          this.cache.bossDesperate = !!b.desperate;
         }
-        const pattern = b.attack ? (b.attackLabel || '') : '';
+        const pattern = b.attack ? (b.attackLabel || '') : (b.mercy > 0 ? '核心重载' : '蓄招');
         if (pattern !== this.cache.bossPattern) {
           el.bossPattern.textContent = pattern;
           el.bossPattern.classList.toggle('is-live', !!pattern);

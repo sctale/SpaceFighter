@@ -54,12 +54,12 @@
       <footer class="hud-bottom">
         <div class="hud-left">
           <div class="lives" id="hudLives" aria-label="剩余生命"></div>
-          <div class="weapon-chip" id="weaponChip">
+          <button class="weapon-chip" id="weaponChip" type="button" aria-label="切换武器">
             <span class="weapon-dot"></span>
             <span id="weaponName">脉冲炮</span>
             <em class="weapon-mod" id="weaponMod" hidden></em>
             <i class="weapon-pips" id="weaponPips"></i>
-          </div>
+          </button>
           <div class="shield-chip" id="shieldChip" hidden>
             <span>护盾</span>
             <i class="shield-pips" id="shieldPips"></i>
@@ -107,7 +107,7 @@
           </h1>
           <p class="tagline">穿过裂隙，在弹幕之间起舞。</p>
           <div class="feature-chips" aria-label="核心内容">
-            <span>12 种敌机</span><span>13 种 Boss 招式</span><span>4 类僚机</span><span>3 层护盾</span>
+            <span>12 种敌机</span><span>22 种 Boss 招式</span><span>3 条武器线 ×5 级</span><span>4 类僚机</span><span>3 层护盾</span>
           </div>
         </div>
 
@@ -127,12 +127,14 @@
 
         <div class="control-hints">
           <div class="control-hint"><span class="hint-key">拖动</span><span>飞行 · 自动开火</span></div>
+          <div class="control-hint"><span class="hint-key">武器卡</span><span>点按切换武器线</span></div>
+          <div class="control-hint"><span class="hint-key">Q</span><span>切换武器 · 1 2 3 直选</span></div>
           <div class="control-hint"><span class="hint-key">擦弹</span><span>贴近弹幕充能</span></div>
           <div class="control-hint"><span class="hint-key">X</span><span>释放星爆</span></div>
           <div class="control-hint"><span class="hint-key">冲刺</span><span>穿弹短暂无敌</span></div>
         </div>
 
-        <p class="menu-foot">v2.2 · 武器核心 / 僚机编队 / 护盾力场</p>
+        <p class="menu-foot">v2.3 · 三段 Boss 阶段 / 武器等级树 / 僚机翼位编队</p>
       </div>
     </section>
 

@@ -99,7 +99,7 @@
         add(3.0, () => {
           const type = ['lancer', 'orbiter', 'splitter', 'sidewinder'][(s - 2) % 4];
           this.queue(type, SF.W * 0.5, -100, 0, { elite: true });
-          this.queueSupply(s >= 4 ? 'core' : 'shield');
+          this.queueSupply(s >= 4 ? (s % 2 ? 'prism' : 'swarm') : 'shield');
         });
       }
       if (s >= 3) {
@@ -147,7 +147,7 @@
       game.pickups.push(new SF.Pickup(px, py, type));
       const pal = SF.PALETTE;
       const col = type === 'life' ? pal.rose
-        : (type === 'core' || type === 'reflect') ? pal.gold
+        : (type === 'prism' || type === 'swarm' || type === 'reflect') ? pal.gold
         : type === 'shield' ? pal.violet : pal.teal;
       game.fx.ring(px, py, col, 6, 0.55, 58);
       game.fx.spark(px, py, col, 5, 100, 0.35);
@@ -217,12 +217,16 @@
       const p = g.player;
       let type;
       if (p && p.level < 3) type = 'power';
-      else if (p && p.weaponMode === 'pulse' && SF.chance(0.3)) type = 'core';
+      else if (p && (!p.weapons.prism.unlocked || !p.weapons.swarm.unlocked) && SF.chance(0.3)) {
+        type = !p.weapons.prism.unlocked ? 'prism'
+          : !p.weapons.swarm.unlocked ? 'swarm'
+          : SF.pick(['prism', 'swarm']);
+      }
       else if (p && p.shieldCharges < 3 && SF.chance(0.4)) type = 'shield';
       else if (p && p.drones.length < 3 && SF.chance(0.35)) type = 'drone';
       else if (p && p.reflectT <= 0 && SF.chance(0.25)) type = 'reflect';
       else if (g.lives <= 2 && SF.chance(0.3)) type = 'life';
-      else type = SF.pick(['power', 'power', 'shield', 'core', 'gems']);
+      else type = SF.pick(['power', 'power', 'shield', 'prism', 'swarm', 'gems']);
       if (type === 'gems') {
         for (let i = 0; i < 4; i++) {
           g.pickups.push(new SF.Pickup(SF.W * SF.rand(0.42, 0.58), -20 - i * 18, 'gem'));

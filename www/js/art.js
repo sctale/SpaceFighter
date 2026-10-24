@@ -1296,14 +1296,15 @@
     const col = p.type === 'power' ? P.teal
       : p.type === 'shield' ? P.violet
       : p.type === 'drone' ? P.violet
-      : p.type === 'core' ? P.gold
+      : p.type === 'prism' ? P.violet
+      : p.type === 'swarm' ? P.gold
       : p.type === 'reflect' ? P.teal
       : P.rose;
     Art.drawGlow(ctx, 0, 0, 30, col, 0.35 + Math.sin(t * 4) * 0.08);
     ctx.restore();
 
     ctx.rotate(t * 0.7);
-    ctx.strokeStyle = p.type === 'power' ? P.gold : p.type === 'core' ? P.rose : p.type === 'reflect' ? P.gold : col;
+    ctx.strokeStyle = p.type === 'power' ? P.gold : p.type === 'prism' ? P.violet : p.type === 'swarm' ? P.gold : p.type === 'reflect' ? P.gold : col;
     ctx.fillStyle = 'rgba(6,10,22,.85)';
     ctx.lineWidth = 1.4;
     ctx.beginPath();
@@ -1318,28 +1319,32 @@
     ctx.stroke();
     ctx.rotate(-t * 0.7);
 
-    ctx.fillStyle = p.type === 'power' ? P.gold : p.type === 'core' ? P.gold : p.type === 'reflect' ? P.teal : col;
+    ctx.fillStyle = p.type === 'power' ? P.gold : p.type === 'prism' ? P.violet : p.type === 'swarm' ? P.gold : p.type === 'reflect' ? P.teal : col;
     if (p.type === 'power') {
       ctx.beginPath();
       ctx.moveTo(0, -6); ctx.lineTo(4.5, 0); ctx.lineTo(0, 6); ctx.lineTo(-4.5, 0);
       ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.fillRect(-0.7, -4, 1.4, 8);
-    } else if (p.type === 'core') {
-      // weapon core: three stacked chevrons
-      for (let i = 0; i < 3; i++) {
-        ctx.globalAlpha = 0.55 + i * 0.18;
+    } else if (p.type === 'prism') {
+      // three-sided prism: single-target piercing identity
+      ctx.beginPath();
+      ctx.moveTo(0, -7); ctx.lineTo(6.5, 5); ctx.lineTo(-6.5, 5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(0, -3.5); ctx.lineTo(3, 3); ctx.lineTo(-3, 3);
+      ctx.closePath(); ctx.fill();
+    } else if (p.type === 'swarm') {
+      // four micro-missile seeds
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + t * 0.5;
         ctx.beginPath();
-        ctx.moveTo(0, -7 + i * 4);
-        ctx.lineTo(5 - i * 0.8, -2 + i * 4);
-        ctx.lineTo(0, 3 + i * 4);
-        ctx.lineTo(-5 + i * 0.8, -2 + i * 4);
-        ctx.closePath();
+        ctx.arc(Math.cos(a) * 4.5, Math.sin(a) * 4.5, 2.1, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.globalAlpha = 1;
       ctx.fillStyle = '#fff';
-      ctx.fillRect(-0.6, -5, 1.2, 10);
+      ctx.beginPath(); ctx.arc(0, 0, 1.6, 0, Math.PI * 2); ctx.fill();
     } else if (p.type === 'reflect') {
       // prism field: concentric rings
       ctx.strokeStyle = P.gold;

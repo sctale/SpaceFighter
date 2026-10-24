@@ -34,6 +34,7 @@
       this.dead = false;
       this.homing = opts.homing || 0;
       this.turn = opts.turn || 2.4;
+      this.lockDelay = opts.lockDelay || 0;
       this.scale = opts.scale || 1;
       this.pierce = opts.pierce || 0;
       this.hitSet = this.pierce > 0 ? new Set() : null;
@@ -54,7 +55,7 @@
         if (d < bd) { bd = d; best = g.boss; }
       }
       for (const e of g.enemies) {
-        if (e.dead) continue;
+        if (!e.targetable()) continue;
         const d = (e.x - this.x) ** 2 + (e.y - this.y) ** 2;
         if (d < bd) { bd = d; best = e; }
       }
@@ -115,10 +116,13 @@
       }
 
       if (this.homing > 0) {
+        if (this.lockDelay > 0) this.lockDelay -= dt;
         let tx = null, ty = null;
         if (this.friendly) {
-          const t = this.findFriendlyTarget();
-          if (t) { tx = t.x; ty = t.y; }
+          if (this.lockDelay <= 0) {
+            const t = this.findFriendlyTarget();
+            if (t) { tx = t.x; ty = t.y; }
+          }
         } else if (player && player.alive) {
           tx = player.x; ty = player.y;
         }
@@ -310,12 +314,15 @@
       this.w = 46; this.h = 54;
       this.alive = true;
       this.level = 2;
+      this.activeWeapon = 'pulse';
+      this.weapons = {
+        pulse: { level: 2, unlocked: true },
+        prism: { level: 1, unlocked: false },
+        swarm: { level: 1, unlocked: false },
+      };
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
-      this.droneAngle = 0;
-      this.weaponMode = 'pulse';
-      this.weaponTimer = 0;
       this.fireTimer = 0;
       this.invuln = 1.6;
       this.bank = 0;
@@ -341,12 +348,15 @@
       this.y = SF.H - 130;
       this.alive = true;
       this.level = 2;
+      this.activeWeapon = 'pulse';
+      this.weapons = {
+        pulse: { level: 2, unlocked: true },
+        prism: { level: 1, unlocked: false },
+        swarm: { level: 1, unlocked: false },
+      };
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
-      this.droneAngle = 0;
-      this.weaponMode = 'pulse';
-      this.weaponTimer = 0;
       this.fireTimer = 0;
       this.invuln = 1.8;
       this.nova = 0;
@@ -368,9 +378,53 @@
       this.nova = clamp(this.nova + v, 0, 100);
     }
 
+    unlockedWeapons() {
+      return Object.keys(this.weapons).filter((k) => this.weapons[k].unlocked);
+    }
+
     addPower() {
-      if (this.level < 5) { this.level++; return true; }
+      if (this.level < 5) {
+        this.level++;
+        this.weapons[this.activeWeapon].level = this.level;
+        return true;
+      }
       return false;
+    }
+
+    downgradeActive() {
+      this.level = Math.max(1, this.level - 1);
+      this.weapons[this.activeWeapon].level = this.level;
+    }
+
+    selectWeapon(name) {
+      const target = this.weapons[name];
+      if (!target || !target.unlocked || name === this.activeWeapon) return false;
+      this.weapons[this.activeWeapon].level = this.level;
+      this.activeWeapon = name;
+      this.level = target.level;
+      this.fireTimer = Math.min(this.fireTimer, 0.07);
+      SF.Audio.sfx('ui');
+      return true;
+    }
+
+    cycleWeapon() {
+      const list = this.unlockedWeapons();
+      if (list.length < 2) return false;
+      const index = list.indexOf(this.activeWeapon);
+      return this.selectWeapon(list[(index + 1) % list.length]);
+    }
+
+    unlockWeapon(name) {
+      const target = this.weapons[name];
+      if (!target) return null;
+      const first = !target.unlocked;
+      target.unlocked = true;
+      if (first) target.level = 1;
+      else if (target.level < 5) target.level++;
+      else return 'max';
+      if (name === this.activeWeapon) this.level = target.level;
+      else this.selectWeapon(name);
+      return first ? 'unlocked' : 'upgraded';
     }
 
     addDrone(kind) {
@@ -379,20 +433,26 @@
       const have = this.drones.map((d) => d.kind);
       const pool = kinds.filter((k) => !have.includes(k));
       const type = kind && kinds.includes(kind) ? kind : (pool.length ? SF.pick(pool) : SF.pick(kinds));
-      this.drones.push({ kind: type, x: this.x, y: this.y, angle: 0, fireT: SF.rand(0.15, 0.5), pdT: 0 });
+      const slot = this.droneSlot(this.drones.length, this.drones.length + 1);
+      this.drones.push({
+        kind: type, x: this.x + slot.x, y: this.y + slot.y,
+        angle: 0, fireT: SF.rand(0.15, 0.5), pdT: 0,
+      });
       return type;
+    }
+
+    droneSlot(index, count) {
+      if (count <= 1) return { x: -44, y: 14 };
+      if (count === 2) return index === 0 ? { x: -44, y: 14 } : { x: 44, y: 14 };
+      if (index === 0) return { x: -47, y: 10 };
+      if (index === 1) return { x: 47, y: 10 };
+      return { x: 0, y: 43 };
     }
 
     addShield(n) {
       const before = this.shieldCharges;
       this.shieldCharges = Math.min(3, this.shieldCharges + (n || 1));
       return this.shieldCharges > before;
-    }
-
-    setWeapon(mode, seconds) {
-      this.weaponMode = mode;
-      this.weaponTimer = seconds || 24;
-      this.fireTimer = Math.min(this.fireTimer, 0.06);
     }
 
     tryDash() {
@@ -446,13 +506,6 @@
       }
       if (this.dashCd > 0) this.dashCd = Math.max(0, this.dashCd - dt);
       if (this.dashT > 0) this.dashT -= dt;
-      if (this.weaponTimer > 0) {
-        this.weaponTimer = Math.max(0, this.weaponTimer - dt);
-        if (this.weaponTimer === 0 && this.weaponMode !== 'pulse') {
-          this.weaponMode = 'pulse';
-          if (SF.Game.playerWeaponExpired) SF.Game.playerWeaponExpired();
-        }
-      }
       if (this.reflectT > 0) this.reflectT = Math.max(0, this.reflectT - dt);
 
       const mv = input.moveVector();
@@ -533,49 +586,48 @@
       // input actions
       if (input.consume('dash')) this.tryDash();
       if (input.consume('nova')) this.fireNova();
+      if (input.consume('weapon')) this.cycleWeapon();
+      if (input.consume('weapon1')) this.selectWeapon('pulse');
+      if (input.consume('weapon2')) this.selectWeapon('prism');
+      if (input.consume('weapon3')) this.selectWeapon('swarm');
 
       // autofire
       this.fireTimer -= dt;
       if (this.fireTimer <= 0 && this.alive) {
         this.shoot();
-        const od = this.overdrive > 0;
-        let rate;
-        if (this.weaponMode === 'prism') rate = od ? 0.12 : 0.17;
-        else if (this.weaponMode === 'swarm') rate = od ? 0.085 : 0.135;
-        else rate = od ? 0.07 : 0.1;
-        this.fireTimer = rate;
+        this.fireTimer = this.fireRate();
       }
 
-      // escort drones
-      this.droneAngle += dt * 1.6;
+      // escort drones hold fixed wing slots and trail with a short spring
       for (let i = 0; i < this.drones.length; i++) {
         const d = this.drones[i];
-        const ang = this.droneAngle + (i / this.drones.length) * TAU;
-        d.angle = ang + Math.PI / 2;
-        d.x = this.x + Math.cos(ang) * 41;
-        d.y = this.y + 8 + Math.sin(ang) * 24;
+        const slot = this.droneSlot(i, this.drones.length);
+        const tx = this.x + slot.x;
+        const ty = this.y + slot.y;
+        d.x = SF.damp(d.x, tx, 13, dt);
+        d.y = SF.damp(d.y, ty, 13, dt);
+        d.angle = this.bank * 0.13;
         d.pdT = Math.max(0, d.pdT - dt);
         d.fireT -= dt;
         if (d.fireT > 0) continue;
 
         if (d.kind === 'gunner') {
-          d.fireT = 0.5;
-          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 6, 0, -780, {
+          d.fireT = 0.52;
+          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 7, 0, -730, {
             friendly: true, kind: 'drone', r: 4, dmg: 1, life: 2,
           }));
         } else if (d.kind === 'lance') {
-          d.fireT = 0.95;
-          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 8, 0, -1020, {
-            friendly: true, kind: 'beam', r: 5, dmg: 3, life: 2, pierce: 1,
+          d.fireT = 0.88;
+          const lean = clamp((d.x - this.x) / 55, -0.16, 0.16);
+          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 9, lean * 230, -980, {
+            friendly: true, kind: 'beam', r: 5, dmg: 2, life: 2, pierce: 1,
           }));
         } else if (d.kind === 'swarm') {
-          d.fireT = 1.2;
-          for (const dir of [-1, 1]) {
-            SF.Game.playerBullets.push(new Bullet(d.x, d.y - 5, dir * 75, -610, {
-              friendly: true, kind: 'micro', r: 4, dmg: 1, life: 2.1,
-              homing: 1.8, turn: 4.8,
-            }));
-          }
+          d.fireT = 1.05;
+          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 5, (d.x - this.x) * 1.8, -520, {
+            friendly: true, kind: 'micro', r: 4, dmg: 1, life: 2.1,
+            homing: 1.5, turn: 4.6, lockDelay: 0.12,
+          }));
         } else if (d.kind === 'aegis') {
           d.fireT = 0.7;
           SF.Game.fx.ring(d.x, d.y, P.violet, 3, 0.28, 32, 0.5);
@@ -589,79 +641,94 @@
       }
     }
 
+    fireRate() {
+      const lv = clamp(this.level, 1, 5);
+      const od = this.overdrive > 0 ? 0.74 : 1;
+      const table = {
+        pulse: [0.120, 0.108, 0.098, 0.090, 0.082],
+        prism: [0.280, 0.250, 0.225, 0.205, 0.190],
+        swarm: [0.250, 0.210, 0.180, 0.160, 0.145],
+      };
+      return (table[this.activeWeapon] || table.pulse)[lv - 1] * od;
+    }
+
     shoot() {
-      const lv = this.level;
+      const lv = clamp(this.level, 1, 5);
       const od = this.overdrive > 0;
-      const dmg = od ? 2 : 1;
-      const speed = -880;
+      const mode = this.activeWeapon;
       const bx = this.x, by = this.y - 26;
-      const mode = this.weaponMode;
       const fire = (x, y, vx, vy, opts) => {
         opts = opts || {};
         SF.Game.playerBullets.push(new Bullet(x, y, vx, vy, {
           friendly: true,
           kind: opts.kind || 'bolt',
           r: opts.r || 5,
-          dmg: opts.dmg === undefined ? dmg : opts.dmg,
+          dmg: opts.dmg === undefined ? 1 : opts.dmg,
           life: opts.life || 2.2,
           pierce: opts.pierce || 0,
           homing: opts.homing || 0,
           turn: opts.turn || 2.4,
+          lockDelay: opts.lockDelay || 0,
           scale: opts.scale || 1,
         }));
       };
 
       if (mode === 'prism') {
-        // piercing star-lances: fewer bullets, much higher per-hit damage
-        const pd = od ? 5 : 3;
-        fire(bx - 7, by, 0, -1180, { kind: 'lance', r: 7, dmg: pd, pierce: 2, life: 2 });
-        fire(bx + 7, by, 0, -1180, { kind: 'lance', r: 7, dmg: pd, pierce: 2, life: 2 });
-        if (lv >= 4) fire(bx, by - 6, 0, -1260, { kind: 'lance', r: 9, dmg: pd + 2, pierce: 3, life: 2 });
-        if (lv >= 5) {
-          fire(bx - 17, by + 4, -150, -1110, { kind: 'lance', r: 6, dmg: pd, pierce: 1, life: 2 });
-          fire(bx + 17, by + 4, 150, -1110, { kind: 'lance', r: 6, dmg: pd, pierce: 1, life: 2 });
+        // Slow, heavy piercing lances. The boss killer: highest single-target
+        // damage, but sparse, so it never cleans a wide swarm for free.
+        const dmg = (od ? 1 : 0) + [3, 3, 4, 4, 5][lv - 1];
+        const pierce = [1, 1, 2, 2, 3][lv - 1];
+        fire(bx, by - 4, 0, -1180, { kind: 'lance', r: 8, dmg, pierce, life: 2 });
+        if (lv >= 2) {
+          fire(bx - 10, by + 2, 0, -1130, { kind: 'lance', r: 6, dmg: Math.max(2, dmg - 1), pierce, life: 2 });
+          fire(bx + 10, by + 2, 0, -1130, { kind: 'lance', r: 6, dmg: Math.max(2, dmg - 1), pierce, life: 2 });
+        }
+        if (lv >= 4) {
+          fire(bx - 20, by + 6, -95, -1080, { kind: 'lance', r: 5, dmg: Math.max(2, dmg - 2), pierce: 1, life: 2 });
+          fire(bx + 20, by + 6, 95, -1080, { kind: 'lance', r: 5, dmg: Math.max(2, dmg - 2), pierce: 1, life: 2 });
         }
       } else if (mode === 'swarm') {
-        // homing micro-missiles that seek the nearest target
-        const n = lv >= 4 ? 4 : 3;
-        for (let i = 0; i < n; i++) {
-          const off = (i - (n - 1) / 2);
-          fire(bx + off * 7, by + 4, off * 105, -640, {
-            kind: 'micro', r: 4, dmg: od ? 2 : (lv >= 4 ? 2 : 1), homing: 2.2, turn: 5.0, life: 2.4,
+        // Fire-and-forget micro missiles. They only acquire visible targets,
+        // so they cannot clear a wave before it is legally on screen. Best
+        // coverage in the game, weakest bite on an armoured hull.
+        const count = [2, 3, 4, 5, 5][lv - 1];
+        const dmg = od ? 2 : (lv >= 4 ? 2 : 1);
+        for (let i = 0; i < count; i++) {
+          const off = (i - (count - 1) / 2);
+          fire(bx + off * 6, by + 6, off * 85, -560, {
+            kind: 'micro', r: 4, dmg, homing: 1.45, turn: 4.6,
+            lockDelay: 0.11, life: 2.2,
           });
         }
-        if (od) {
-          for (const dir of [-1, 1]) {
-            fire(bx + dir * 22, by + 8, dir * 180, -560, {
-              kind: 'micro', r: 4, dmg: 2, homing: 2.2, turn: 5.0, life: 2.4,
-            });
-          }
-        }
       } else {
+        // Balanced rapid pulse. Its patterns gain coverage and a heavy core.
+        const pd = [1, 1, 2, 2, 2][lv - 1];
+        const dmg = od ? pd + 1 : pd;
+        const speed = -880;
         if (lv === 1) {
-          fire(bx, by, 0, speed);
+          fire(bx, by, 0, speed, { dmg });
         } else if (lv === 2) {
-          fire(bx - 7, by, 0, speed);
-          fire(bx + 7, by, 0, speed);
+          fire(bx - 7, by, 0, speed, { dmg });
+          fire(bx + 7, by, 0, speed, { dmg });
         } else if (lv === 3) {
-          fire(bx, by - 4, 0, speed);
-          fire(bx - 9, by + 4, -40, speed);
-          fire(bx + 9, by + 4, 40, speed);
+          fire(bx, by - 4, 0, speed, { dmg: dmg + 1 });
+          fire(bx - 9, by + 4, -40, speed, { dmg });
+          fire(bx + 9, by + 4, 40, speed, { dmg });
         } else if (lv === 4) {
-          fire(bx - 6, by - 2, 0, speed);
-          fire(bx + 6, by - 2, 0, speed);
-          fire(bx - 14, by + 4, -95, speed);
-          fire(bx + 14, by + 4, 95, speed);
+          fire(bx - 6, by - 2, 0, speed, { dmg: dmg + 1 });
+          fire(bx + 6, by - 2, 0, speed, { dmg: dmg + 1 });
+          fire(bx - 15, by + 5, -80, speed, { dmg });
+          fire(bx + 15, by + 5, 80, speed, { dmg });
         } else {
-          fire(bx, by - 6, 0, speed, { kind: 'bolt', r: 6, dmg: dmg + 1 });
-          fire(bx - 8, by + 2, 0, speed);
-          fire(bx + 8, by + 2, 0, speed);
-          fire(bx - 16, by + 6, -125, speed);
-          fire(bx + 16, by + 6, 125, speed);
+          fire(bx, by - 6, 0, speed, { kind: 'bolt', r: 6, dmg: dmg + 2 });
+          fire(bx - 8, by + 2, 0, speed, { dmg });
+          fire(bx + 8, by + 2, 0, speed, { dmg });
+          fire(bx - 17, by + 7, -105, speed, { dmg });
+          fire(bx + 17, by + 7, 105, speed, { dmg });
         }
         if (od) {
-          fire(bx - 22, by + 10, -190, speed * 0.94);
-          fire(bx + 22, by + 10, 190, speed * 0.94);
+          fire(bx - 24, by + 10, -160, speed * 0.94, { dmg });
+          fire(bx + 24, by + 10, 160, speed * 0.94, { dmg });
         }
       }
 
@@ -921,6 +988,11 @@
 
     get radius() { return this.size * 0.78; }
 
+    targetable() {
+      return !this.dead && this.age > (this.entryDelay + 0.18)
+        && this.y > -10 && this.y < SF.H * 0.94;
+    }
+
     update(dt, player) {
       this.t += dt;
       this.age += dt;
@@ -1133,7 +1205,7 @@
     }
 
     hit(dmg, x, y) {
-      if (this.dead) return true;
+      if (this.dead || !this.targetable()) return false;
       this.hp -= dmg;
       this.flash = 0.07;
       SF.Audio.sfx('hit');
@@ -1224,7 +1296,8 @@
         const col = this.type === 'power' ? SF.PALETTE.teal
           : this.type === 'shield' ? SF.PALETTE.violet
           : this.type === 'drone' ? SF.PALETTE.violet
-          : this.type === 'core' ? SF.PALETTE.gold
+          : this.type === 'prism' ? SF.PALETTE.violet
+          : this.type === 'swarm' ? SF.PALETTE.gold
           : this.type === 'reflect' ? SF.PALETTE.gold : SF.PALETTE.rose;
         SF.Game.fx.ember(this.x + SF.rand(-9, 9), this.y + SF.rand(-8, 8), col, 1.2, 0.34, SF.rand(-8, 8), SF.rand(-18, -4));
       }
@@ -1332,21 +1405,39 @@
   SF.Laser = Laser;
 
   /* ---------------- Boss ---------------- */
+  // Each boss owns three scripted spell rotations — one per phase. The rotation
+  // is cycled in order (never random), so a pattern can be learned and predicted;
+  // a later phase always adds vocabulary instead of only firing the same moves faster.
   const BOSS_TYPES = [
     {
       id: 'gatekeeper', name: '阿刻戎', title: '守门人', en: 'GATEKEEPER',
-      size: 76, hp: 390, color: P.rose, glow: P.rose,
-      attacks: ['fan', 'twinBeam', 'mineCurtain', 'sweep', 'spiral', 'barrage'], shape: 'hex',
+      size: 76, hp: 320, color: P.rose, glow: P.rose,
+      phases: [
+        ['fan', 'wallGap', 'twinBeam', 'mineCurtain'],
+        ['spiral', 'wallGap', 'pulsar', 'fan', 'twinBeam'],
+        ['charge', 'crossSweep', 'wallGap', 'cascade', 'ring', 'spiral'],
+      ],
+      shape: 'hex',
     },
     {
       id: 'weaver', name: '薇尔', title: '织星者', en: 'STAR WEAVER',
-      size: 80, hp: 560, color: P.violet, glow: P.violet,
-      attacks: ['ring', 'homing', 'cross', 'blink', 'waveCurtain', 'summon'], shape: 'wing',
+      size: 80, hp: 380, color: P.violet, glow: P.violet,
+      phases: [
+        ['ring', 'homingBarrage', 'cross', 'waveCurtain'],
+        ['spiralDouble', 'blink', 'homingBarrage', 'summon', 'cross'],
+        ['crossSweep', 'laserWeb', 'spiralDouble', 'homingBarrage', 'ring', 'waveCurtain'],
+      ],
+      shape: 'wing',
     },
     {
       id: 'helios', name: '赫利俄斯', title: '新星核心', en: 'NOVA CORE',
-      size: 82, hp: 680, color: P.gold, glow: P.gold,
-      attacks: ['spiral', 'barrage', 'laserWeb', 'mineCurtain', 'twinBeam', 'summon'], shape: 'core',
+      size: 82, hp: 440, color: P.gold, glow: P.gold,
+      phases: [
+        ['spiral', 'barrage', 'laserWeb', 'mineCurtain'],
+        ['novaBurst', 'summon', 'twinBeam', 'spiral', 'barrage'],
+        ['novaBurst', 'crossSweep', 'cascade', 'laserWeb', 'mineRing', 'barrage'],
+      ],
+      shape: 'core',
     },
   ];
   SF.BOSS_TYPES = BOSS_TYPES;
@@ -1356,13 +1447,26 @@
     sweep: '双生扫射', cross: '十字光牢', summon: '母舰召唤', barrage: '重弹压制',
     twinBeam: '双子光矛', mineCurtain: '雷区播种', blink: '相位闪现',
     laserWeb: '星网绞杀', waveCurtain: '波动弹幕',
+    wallGap: '裂隙光幕', pulsar: '星脉脉冲', charge: '贯穿冲撞',
+    crossSweep: '光牢旋扫', cascade: '陨星暴雨', homingBarrage: '猎群连射',
+    spiralDouble: '逆向双旋', mineRing: '环形雷阵', novaBurst: '新星爆发',
   };
   SF.ATTACK_LABELS = ATTACK_LABELS;
+
+  const ATTACK_DURATION = {
+    fan: 1.3, spiral: 2.0, ring: 1.05, homing: 1.0, sweep: 2.5, cross: 2.0,
+    summon: 1.15, barrage: 1.9, twinBeam: 2.2, mineCurtain: 2.0, blink: 2.2,
+    laserWeb: 2.4, waveCurtain: 2.0, wallGap: 2.8, pulsar: 2.2, charge: 3.2,
+    crossSweep: 2.9, cascade: 3.1, homingBarrage: 2.7, spiralDouble: 2.4,
+    mineRing: 1.9, novaBurst: 2.6,
+  };
+  // Attacks that take over the boss position for their whole duration.
+  const MOVING_ATTACKS = { blink: true, charge: true };
+  SF.ATTACK_DURATION = ATTACK_DURATION;
 
   class Boss {
     constructor(sector) {
       const idx = (sector - 1) % BOSS_TYPES.length;
-      const cycle = Math.floor((sector - 1) / BOSS_TYPES.length);
       const def = BOSS_TYPES[idx];
       this.def = def;
       this.type = def.id;
@@ -1371,7 +1475,7 @@
       this.en = def.en;
       this.sector = sector;
       this.size = def.size;
-      this.maxHp = Math.round(def.hp * (1 + cycle * 0.42 + (sector - 1) * 0.045));
+      this.maxHp = Math.round(def.hp * (1 + (sector - 1) * 0.85));
       this.hp = this.maxHp;
       this.glowColor = def.color;
       this.x = SF.W / 2;
@@ -1385,14 +1489,20 @@
       this.deathT = 0;
       this.burstTimer = 0.2;
       this.attack = null;
-      this.attackCd = 1.4;
+      this.attackCd = 1.15;
       this.phase = 1;
+      this.seqIdx = 0;
+      this.spellCount = 0;
       this.attacksUsed = [];
       this.rewarded = false;
       this.bobPhase = Math.random() * TAU;
       this.lastPattern = '';
       this.lockMove = false;
       this.attackLabel = '';
+      this.mercy = 0;
+      this.idleCd = 0.8;
+      this.dive = null;
+      this.desperate = false;
     }
 
     get radius() { return this.size * 0.8; }
@@ -1438,13 +1548,34 @@
 
       // phase
       const ratio = this.hp / this.maxHp;
-      const newPhase = ratio < 0.28 ? 3 : ratio < 0.62 ? 2 : 1;
+      const newPhase = ratio < 0.30 ? 3 : ratio < 0.66 ? 2 : 1;
       if (newPhase !== this.phase) {
         this.phase = newPhase;
-        this.flash = 0.4;
+        this.flash = 0.5;
+        // A phase change is a mercy window: the board is wiped, the rotation
+        // restarts from the top of the new list, and the hull gets a beat of grace.
+        this.attack = null;
+        this.attackLabel = '';
+        this.lockMove = false;
+        this.dive = null;
+        this.seqIdx = 0;
+        this.mercy = 1.15;
+        this.attackCd = 1.15;
         SF.Game.onBossPhase(this);
         SF.Game.fx.ring(this.x, this.y, this.def.color, this.size * 0.6, 0.7, this.size * 3);
+        SF.Game.fx.rays(this.x, this.y, this.def.color, 12, this.size * 2.6, 0.55);
         SF.Audio.sfx('warn');
+      }
+      if (this.mercy > 0) this.mercy -= dt;
+
+      // Last-ditch overload: below 12% the hull stops pausing between spells.
+      if (this.phase === 3 && !this.desperate && ratio < 0.12) {
+        this.desperate = true;
+        this.seqIdx = 0;
+        this.flash = 0.6;
+        this.attack = null;
+        this.attackCd = 0.45;
+        SF.Game.onBossDesperation(this);
       }
 
       // hover — faster, wider arcs in later phases (unless a pattern is repositioning us)
@@ -1460,6 +1591,7 @@
       } else {
         this.attackCd -= dt;
         if (this.attackCd <= 0) this.chooseAttack();
+        else this.idleFire(dt);
       }
 
       if (Math.random() < dt * 5) {
@@ -1467,27 +1599,102 @@
       }
     }
 
+    sequence() {
+      const list = this.def.phases[clamp(this.phase, 1, 3) - 1];
+      return list && list.length ? list : this.def.phases[0];
+    }
+
     chooseAttack() {
-      const cap = this.phase === 1 ? 4 : this.phase === 2 ? 5 : this.def.attacks.length;
-      const base = this.def.attacks.slice(0, cap);
-      const recent = this.attacksUsed.slice(-2);
-      const fresh = base.filter((n) => !recent.includes(n));
-      const use = SF.pick(fresh.length ? fresh : base);
-      this.attacksUsed.push(use);
+      const list = this.sequence();
+      const name = list[this.seqIdx % list.length];
+      this.seqIdx++;
+      // Late in phase 3 the rotation wraps into a double cast: the boss follows
+      // itself straight out of a spell instead of idling.
+      this.spellCount++;
+      this.attacksUsed.push(name);
       if (this.attacksUsed.length > 5) this.attacksUsed.shift();
-      this.startAttack(use);
+      this.lastPattern = name;
+      this.startAttack(name);
     }
 
     startAttack(name) {
-      this.attack = { name, t: 0, fired: {}, emit: 0, angle: Math.random() * TAU };
-      this.lastPattern = name;
+      this.attack = { name, t: 0, fired: {}, emit: 0, angle: Math.random() * TAU, data: null };
       this.attackLabel = ATTACK_LABELS[name] || '';
-      this.lockMove = name === 'blink';
-      this.attackDuration = ({
-        fan: 1.25, spiral: 2.0, ring: 1.05, homing: 1.0,
-        sweep: 2.5, cross: 2.0, summon: 1.0, barrage: 1.8,
-        twinBeam: 2.2, mineCurtain: 2.0, blink: 2.2, laserWeb: 2.4, waveCurtain: 2.0,
-      })[name] || 1.2;
+      this.attackDuration = ATTACK_DURATION[name] || 1.2;
+      this.lockMove = !!MOVING_ATTACKS[name];
+      SF.Audio.sfx('warn');
+    }
+
+    aimAngle() {
+      const pl = SF.Game.player;
+      return pl && pl.alive ? Math.atan2(pl.y - this.y, pl.x - this.x) : Math.PI / 2;
+    }
+
+    bulletSpeed() {
+      const base = Math.min(310, 178 + (this.sector - 1) * 7);
+      return base * (this.phase === 3 ? 1.18 : this.phase === 2 ? 1.06 : 1);
+    }
+
+    shot(ang, speed, kind, opts) {
+      opts = opts || {};
+      this.shotFrom(this.x + (opts.ox || 0), this.y + this.size * 0.35 + (opts.oy || 0), ang, speed, kind, opts);
+    }
+
+    shotFrom(x, y, ang, speed, kind, opts) {
+      opts = opts || {};
+      SF.Game.enemyBullets.push(new Bullet(
+        x, y, Math.cos(ang) * speed, Math.sin(ang) * speed,
+        { kind: kind || 'orb', r: opts.r || 6, life: opts.life || 10, homing: opts.homing || 0,
+          turn: opts.turn || 2.2, scale: opts.scale || 1,
+          fuse: opts.fuse || 0, split: opts.split || 0, wave: opts.wave || 0 }
+      ));
+    }
+
+    fan(n, spread, speed, kind) {
+      const aim = this.aimAngle();
+      for (let i = 0; i < n; i++) {
+        this.shot(aim + (i - (n - 1) / 2) * spread, speed, kind || 'shard');
+      }
+    }
+
+    ring(n, offset, speed, kind) {
+      for (let i = 0; i < n; i++) this.shot((i / n) * TAU + offset, speed, kind || 'orb');
+    }
+
+    beam(ang, opts) {
+      SF.Game.lasers.push(new Laser(this.x, this.y, ang,
+        Object.assign({ boss: this, color: this.def.color }, opts)));
+    }
+
+    pulse(color, radius) {
+      SF.Game.fx.ring(this.x, this.y, color, 10, 0.4, radius || this.size * 3, 0.75);
+    }
+
+    // Seekers with a delayed lock and a capped turn rate: they pressure movement
+    // without being unavoidable.
+    seekerVolley(n) {
+      const spd = this.bulletSpeed();
+      const aim = this.aimAngle();
+      for (let i = 0; i < n; i++) {
+        this.shot(aim + (i - (n - 1) / 2) * 0.42, spd * 0.58, 'homing',
+          { r: 7, homing: 2.6, turn: 1.9 });
+      }
+      this.pulse(this.def.color, this.size * 1.8);
+      SF.Audio.sfx('hit');
+    }
+
+    // Between spells the hull keeps poking — a boss should never feel passive.
+    idleFire(dt) {
+      if (this.mercy > 0 || this.phase < 2) return;
+      this.idleCd -= dt;
+      if (this.idleCd > 0) return;
+      const spd = this.bulletSpeed();
+      const aim = this.aimAngle();
+      const n = this.phase === 3 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        this.shot(aim + (i - (n - 1) / 2) * 0.22, spd * 0.92, 'needle', { r: 5 });
+      }
+      this.idleCd = this.phase === 3 ? 0.66 : 0.95;
     }
 
     at(a, time, fn) {
@@ -1497,29 +1704,9 @@
     updateAttack(dt) {
       const a = this.attack;
       a.t += dt;
-      const pl = SF.Game.player;
-      const aim = pl ? Math.atan2(pl.y - this.y, pl.x - this.x) : Math.PI / 2;
-      const speedBase = Math.min(280, 165 + (this.sector - 1) * 6);
-      const spd = speedBase * (this.phase === 3 ? 1.15 : 1);
+      const spd = this.bulletSpeed();
+      const aim = this.aimAngle();
 
-      const shot = (ang, speed, kind, opts) => {
-        opts = opts || {};
-        SF.Game.enemyBullets.push(new Bullet(
-          this.x + (opts.ox || 0), this.y + this.size * 0.35 + (opts.oy || 0),
-          Math.cos(ang) * speed, Math.sin(ang) * speed,
-          { kind: kind || 'orb', r: opts.r || 6, life: opts.life || 10, homing: opts.homing || 0,
-            turn: opts.turn || 2.2, scale: opts.scale || 1,
-            fuse: opts.fuse || 0, split: opts.split || 0, wave: opts.wave || 0 }
-        ));
-      };
-      const fan = (n, spread) => {
-        for (let i = 0; i < n; i++) {
-          shot(aim + (i - (n - 1) / 2) * spread, spd, 'shard');
-        }
-      };
-      const ring = (n, offset) => {
-        for (let i = 0; i < n; i++) shot((i / n) * TAU + offset, spd * 0.8, 'orb');
-      };
       const warpTo = (nx, ny, count) => {
         SF.Game.fx.ring(this.x, this.y, this.def.color, this.size * 0.5, 0.4, this.size * 2.4, 0.8);
         SF.Game.fx.spark(this.x, this.y, this.def.color, 8, 130, 0.35);
@@ -1528,73 +1715,67 @@
         this.flash = 0.2;
         SF.Game.fx.ring(this.x, this.y, this.def.color, this.size * 0.4, 0.45, this.size * 3, 0.9);
         SF.Audio.sfx('hit');
-        for (let i = 0; i < count; i++) shot((i / count) * TAU + aim, spd * 0.75, 'orb');
+        this.ring(count, this.aimAngle(), spd * 0.78);
       };
 
       switch (a.name) {
-        case 'fan':
-          this.at(a, 0.1, () => { fan(this.phase >= 2 ? 7 : 5, 0.17); SF.Audio.sfx('hit'); });
-          this.at(a, 0.55, () => { fan(this.phase >= 2 ? 7 : 5, 0.12); });
-          this.at(a, 0.95, () => { fan(this.phase >= 3 ? 9 : 5, 0.2); });
+        case 'fan': {
+          const n = this.phase === 3 ? 9 : this.phase === 2 ? 7 : 5;
+          this.at(a, 0.1, () => { this.fan(n, 0.17, spd); SF.Audio.sfx('hit'); });
+          this.at(a, 0.5, () => this.fan(n, 0.12, spd));
+          this.at(a, 0.9, () => this.fan(n + 2, 0.2, spd));
+          this.at(a, 1.18, () => this.ring(this.phase >= 2 ? 12 : 8, aim, spd * 0.58));
           break;
+        }
         case 'spiral':
           a.emit -= dt;
           if (a.emit <= 0) {
-            a.emit = this.phase >= 2 ? 0.065 : 0.085;
-            const arms = this.phase >= 3 ? 4 : this.phase >= 2 ? 3 : 2;
-            for (let i = 0; i < arms; i++) {
-              const ang = a.angle + (i / arms) * TAU;
-              shot(ang, spd * 0.72, 'orb');
-            }
-            a.angle += 0.21;
+            a.emit = this.phase === 3 ? 0.052 : this.phase === 2 ? 0.062 : 0.082;
+            const arms = this.phase === 3 ? 5 : this.phase === 2 ? 4 : 3;
+            for (let i = 0; i < arms; i++) this.shot(a.angle + (i / arms) * TAU, spd * 0.72, 'orb');
+            a.angle += 0.24;
           }
           break;
         case 'ring':
-          this.at(a, 0.15, () => {
-            ring(this.phase >= 2 ? 26 : 20, Math.random() * TAU);
+          this.at(a, 0.12, () => {
+            this.ring(this.phase >= 2 ? 28 : 22, Math.random() * TAU, spd * 0.8);
+            this.pulse(this.def.color, this.size * 2.6);
             SF.Audio.sfx('hit');
           });
-          this.at(a, 0.6, () => ring(this.phase >= 3 ? 28 : 22, 0.2));
+          this.at(a, 0.55, () => this.ring(this.phase >= 3 ? 30 : 24, 0.22, spd * 0.58));
+          this.at(a, 0.86, () => this.fan(this.phase >= 2 ? 5 : 3, 0.26, spd * 1.12));
           break;
         case 'homing':
-          this.at(a, 0.15, () => {
-            for (let i = 0; i < (this.phase >= 2 ? 5 : 3); i++) {
-              shot(aim + (i - 1) * 0.22, spd * 0.55, 'homing', { r: 7, homing: 1.6, turn: 2.1 });
-            }
-            SF.Audio.sfx('hit');
-          });
+          this.at(a, 0.15, () => this.seekerVolley(this.phase >= 2 ? 5 : 3));
+          if (this.phase >= 2) this.at(a, 0.7, () => this.seekerVolley(3));
           break;
-        case 'sweep': {
+        case 'sweep':
           this.at(a, 0.1, () => {
-            SF.Game.lasers.push(new Laser(this.x, this.y, aim - 0.55, {
-              warn: 1.0, active: 0.9, width: 15, sweep: 0.85, boss: this, color: this.def.color,
-            }));
+            this.beam(aim - 0.55, { warn: 0.9, active: 0.9, width: 16, sweep: 0.9 });
             SF.Audio.sfx('warn');
           });
-          this.at(a, 1.3, () => {
-            SF.Game.lasers.push(new Laser(this.x, this.y, aim + 0.55, {
-              warn: 0.85, active: 0.8, width: 13, sweep: -0.9, boss: this, color: this.def.color,
-            }));
+          this.at(a, 1.25, () => {
+            this.beam(aim + 0.55, { warn: 0.8, active: 0.85, width: 14, sweep: -0.95 });
+            SF.Audio.sfx('warn');
           });
+          this.at(a, 2.15, () => this.fan(this.phase >= 2 ? 5 : 3, 0.24, spd));
           break;
-        }
         case 'cross':
           this.at(a, 0.15, () => {
             const base = Math.random() * 0.6;
             for (let i = 0; i < 4; i++) {
-              SF.Game.lasers.push(new Laser(this.x, this.y, base + i * Math.PI / 2, {
-                warn: 1.0, active: 0.62, width: 11, boss: this, color: this.def.color,
-              }));
+              this.beam(base + i * Math.PI / 2, { warn: 0.95, active: 0.62, width: 12 });
             }
             SF.Audio.sfx('warn');
           });
+          this.at(a, 1.05, () => this.ring(this.phase >= 2 ? 14 : 10, aim, spd * 0.7));
           break;
         case 'summon':
           this.at(a, 0.2, () => {
             const roster = this.sector >= 4
               ? ['sniper', 'sidewinder', 'shardling']
               : this.sector >= 2 ? ['shardling', 'wasp'] : ['wasp'];
-            const n = this.phase >= 3 ? 3 : 2;
+            const n = this.phase === 3 ? 4 : this.phase === 2 ? 3 : 2;
             for (let i = 0; i < n; i++) {
               const ex = this.x + (i - (n - 1) / 2) * this.size * 1.5;
               SF.Game.spawnEnemy(roster[i % roster.length], ex, this.y + this.size * 0.8, { sector: this.sector });
@@ -1604,90 +1785,293 @@
           break;
         case 'barrage':
           this.at(a, 0.12, () => {
-            for (let i = 0; i < 5; i++) {
-              const ang = aim + (i - 2) * 0.23;
-              shot(ang, spd * 0.6, 'heavy', { r: 10, scale: 1 });
-            }
+            for (let i = 0; i < 5; i++) this.shot(aim + (i - 2) * 0.23, spd * 0.62, 'heavy', { r: 10 });
             if (this.phase >= 2) {
-              shot(aim - 0.34, spd * 0.38, 'plasma', { r: 13, scale: 1.1, life: 3.4, split: 6 });
-              shot(aim + 0.34, spd * 0.38, 'plasma', { r: 13, scale: 1.1, life: 3.4, split: 6 });
+              this.shot(aim - 0.34, spd * 0.4, 'plasma', { r: 13, scale: 1.1, life: 3.4, split: 7 });
+              this.shot(aim + 0.34, spd * 0.4, 'plasma', { r: 13, scale: 1.1, life: 3.4, split: 7 });
             }
             SF.Audio.sfx('hit');
           });
-          this.at(a, 0.7, () => {
-            for (let i = 0; i < 12; i++) shot((i / 12) * TAU + 0.3, spd * 0.7, 'shard');
-          });
-          this.at(a, 1.25, () => fan(5, 0.2));
+          this.at(a, 0.7, () => { for (let i = 0; i < 12; i++) this.shot((i / 12) * TAU + 0.3, spd * 0.72, 'shard'); });
+          this.at(a, 1.2, () => this.fan(5, 0.2, spd));
+          this.at(a, 1.68, () => this.ring(this.phase >= 2 ? 18 : 12, aim, spd * 0.9));
           break;
         case 'twinBeam':
           this.at(a, 0.12, () => {
-            SF.Game.lasers.push(new Laser(this.x, this.y, aim - 0.65, {
-              warn: 1.0, active: 0.85, width: 13, sweep: 0.55, boss: this, color: this.def.color,
-            }));
-            SF.Game.lasers.push(new Laser(this.x, this.y, aim + 0.65, {
-              warn: 1.0, active: 0.85, width: 13, sweep: -0.55, boss: this, color: this.def.color,
-            }));
+            this.beam(aim - 0.65, { warn: 0.95, active: 0.9, width: 14, sweep: 0.6 });
+            this.beam(aim + 0.65, { warn: 0.95, active: 0.9, width: 14, sweep: -0.6 });
             SF.Audio.sfx('warn');
           });
-          this.at(a, 1.15, () => {
-            for (let i = 0; i < (this.phase >= 2 ? 5 : 3); i++) {
-              shot(aim + (i - 1) * 0.18, spd * 1.05, 'needle', { r: 5, scale: 1.2 });
+          this.at(a, 1.1, () => {
+            const n = this.phase >= 2 ? 5 : 3;
+            for (let i = 0; i < n; i++) {
+              this.shot(aim + (i - (n - 1) / 2) * 0.18, spd * 1.05, 'needle', { r: 5, scale: 1.2 });
             }
             SF.Audio.sfx('hit');
           });
+          this.at(a, 1.75, () => this.ring(this.phase === 3 ? 16 : 10, a.angle, spd * 0.66));
           break;
         case 'mineCurtain':
           this.at(a, 0.1, () => {
-            for (let i = 0; i < 5; i++) {
-              const ang = aim + (i - 2) * 0.26;
-              shot(ang, 95, 'mine', { r: 9, fuse: 1.7, split: 9, scale: 1 });
-            }
+            for (let i = 0; i < 5; i++) this.shot(aim + (i - 2) * 0.26, 98, 'mine', { r: 9, fuse: 1.7, split: 9 });
             SF.Audio.sfx('hit');
           });
           this.at(a, 0.85, () => {
-            for (let i = 0; i < (this.phase >= 2 ? 7 : 5); i++) {
-              const ang = Math.PI / 2 + (i - 2) * 0.3;
-              shot(ang, 80, 'mine', { r: 8, fuse: 2.1, split: 8 });
+            const n = this.phase >= 2 ? 7 : 5;
+            for (let i = 0; i < n; i++) {
+              this.shot(Math.PI / 2 + (i - (n - 1) / 2) * 0.3, 82, 'mine', { r: 8, fuse: 2.1, split: 8 });
             }
-            SF.Game.fx.ring(this.x, this.y, this.def.color, 6, 0.35, 120, 0.5);
+            this.pulse(P.gold, 150);
           });
+          if (this.phase >= 2) this.at(a, 1.5, () => this.fan(3, 0.42, spd * 1.05));
           break;
         case 'blink':
           this.at(a, 0.15, () => warpTo(SF.W * 0.24, this.targetY - 18, 12));
           this.at(a, 0.82, () => warpTo(SF.W * 0.74, this.targetY + 26, 14));
-          this.at(a, 1.5, () => warpTo(SF.W * 0.5, this.targetY - 8, 16));
+          this.at(a, 1.5, () => warpTo(SF.W * 0.5, this.targetY - 8, 18));
           break;
         case 'laserWeb':
           this.at(a, 0.12, () => {
             const base = aim - 0.6;
             for (let i = 0; i < 4; i++) {
-              SF.Game.lasers.push(new Laser(this.x, this.y, base + i * Math.PI / 2, {
-                warn: 0.9, active: 0.65, width: 10, sweep: i % 2 ? -0.55 : 0.55,
-                boss: this, color: this.def.color,
-              }));
+              this.beam(base + i * Math.PI / 2, { warn: 0.85, active: 0.7, width: 11, sweep: i % 2 ? -0.6 : 0.6 });
             }
             SF.Audio.sfx('warn');
           });
-          this.at(a, 1.15, () => {
-            for (let i = 0; i < 2; i++) {
-              SF.Game.lasers.push(new Laser(this.x, this.y, aim + (i ? 0.5 : -0.5), {
-                warn: 0.75, active: 0.55, width: 9, boss: this, color: this.def.color,
-              }));
-            }
-            SF.Game.fx.ring(this.x, this.y, this.def.color, 6, 0.35, 120, 0.5);
+          this.at(a, 1.05, () => {
+            this.beam(aim - 0.5, { warn: 0.7, active: 0.6, width: 10 });
+            this.beam(aim + 0.5, { warn: 0.7, active: 0.6, width: 10 });
+            this.pulse(this.def.color, 130);
           });
+          this.at(a, 1.85, () => this.ring(this.phase >= 2 ? 16 : 10, a.angle, spd * 0.82));
           break;
         case 'waveCurtain':
           this.at(a, 0.1, () => {
-            for (let i = 0; i < 9; i++) {
-              shot(aim + (i - 4) * 0.17, spd * 0.72, 'wave', { r: 7, wave: 2.1, scale: 1.15 });
-            }
+            for (let i = 0; i < 9; i++) this.shot(aim + (i - 4) * 0.17, spd * 0.72, 'wave', { r: 7, wave: 2.1, scale: 1.15 });
             SF.Audio.sfx('hit');
           });
           this.at(a, 0.95, () => {
-            for (let i = 0; i < 7; i++) {
-              shot(aim + (i - 3) * 0.2, spd * 0.62, 'wave', { r: 6, wave: -2.4, scale: 1.1 });
+            for (let i = 0; i < 7; i++) this.shot(aim + (i - 3) * 0.2, spd * 0.62, 'wave', { r: 6, wave: -2.4, scale: 1.1 });
+          });
+          if (this.phase >= 2) this.at(a, 1.62, () => {
+            for (let i = 0; i < 5; i++) this.shot(aim + (i - 2) * 0.24, spd * 0.9, 'wave', { r: 6, wave: 1.6 });
+          });
+          break;
+
+        /* ---- new: structured patterns that ask something of the player ---- */
+
+        // Full-width curtain with one marked hole — a positioning puzzle, not a coin flip.
+        case 'wallGap': {
+          if (!a.data) a.data = { cols: Math.max(9, Math.round(SF.W / 40)), gap: 3, gapIdx: 0 };
+          const d = a.data;
+          d.gap = this.phase === 3 ? 2 : 3;
+          d.cols = Math.max(9, Math.round(SF.W / 40));
+          const step = SF.W / d.cols;
+          const plan = () => {
+            d.gapIdx = SF.randInt(0, Math.max(0, d.cols - d.gap));
+            const gx = (d.gapIdx + d.gap / 2) * step;
+            for (let i = 0; i < 4; i++) {
+              SF.Game.fx.ring(gx, this.y + this.size * 0.5 + i * 30, P.teal, 5, 0.45, 24, 0.9);
             }
+            SF.Game.fx.spark(gx, this.y + this.size, P.teal, 4, 70, 0.3);
+            SF.Audio.sfx('warn');
+          };
+          const fire = () => {
+            const y = this.y + this.size * 0.5;
+            for (let c = 0; c < d.cols; c++) {
+              if (c >= d.gapIdx && c < d.gapIdx + d.gap) continue;
+              const x = clamp((c + 0.5) * step, 10, SF.W - 10);
+              this.shotFrom(x, y, Math.PI / 2, spd * 0.55, 'needle', { r: 5 });
+            }
+            SF.Audio.sfx('hit');
+          };
+          this.at(a, 0.1, plan);
+          this.at(a, 0.62, () => { fire(); this.fan(3, 0.5, spd * 0.9); });
+          this.at(a, 1.4, plan);
+          this.at(a, 1.92, fire);
+          if (this.phase >= 2) this.at(a, 2.3, plan);
+          this.at(a, 2.7, () => { fire(); this.ring(this.phase === 3 ? 14 : 8, aim, spd * 0.85); });
+          break;
+        }
+
+        // Three rings at three speeds: the layers overtake each other and open lanes.
+        case 'pulsar':
+          this.at(a, 0.12, () => {
+            this.ring(this.phase >= 2 ? 18 : 14, a.angle, spd * 1.12, 'shard');
+            this.pulse(this.def.color, this.size * 2.2);
+            SF.Audio.sfx('hit');
+          });
+          this.at(a, 0.7, () => {
+            this.ring(this.phase >= 2 ? 24 : 18, a.angle + 0.16, spd * 0.6, 'orb');
+            this.pulse(this.def.color, this.size * 2.8);
+          });
+          this.at(a, 1.28, () => {
+            this.ring(this.phase === 3 ? 30 : 24, a.angle + 0.3, spd * 0.86, 'shard');
+            this.pulse(this.def.color, SF.W * 0.8);
+          });
+          this.at(a, 1.8, () => this.fan(this.phase >= 2 ? 5 : 3, 0.3, spd * 1.18));
+          break;
+
+        // The hull becomes the hazard: telegraphed climb, aimed dive, point-blank burst.
+        case 'charge': {
+          if (!a.data) {
+            a.data = {
+              x0: this.x,
+              x1: SF.Game.player ? SF.Game.player.x : SF.W / 2,
+              y1: Math.min(SF.H * 0.74, this.targetY + SF.H * 0.42),
+            };
+          }
+          const d = a.data;
+          const dx = clamp(d.x1, this.size * 1.1, SF.W - this.size * 1.1);
+          if (a.t < 0.9) {
+            this.y = SF.damp(this.y, this.targetY - 30, 4, dt);
+            this.x = SF.damp(this.x, dx, 1.3, dt);
+            if (SF.chance(dt * 16)) {
+              SF.Game.fx.ember(this.x + SF.rand(-this.size * 0.5, this.size * 0.5),
+                this.y + this.size * 0.8, this.def.color, 2, 0.25, 0, 110);
+            }
+            if (!d.warned) { d.warned = true; SF.Audio.sfx('warn'); }
+          } else if (a.t < 1.5) {
+            const p = SF.easeOutCubic(clamp((a.t - 0.9) / 0.6, 0, 1));
+            this.x = SF.lerp(d.x0, dx, p);
+            this.y = SF.lerp(this.targetY - 30, d.y1, p);
+            if (!d.diving) {
+              d.diving = true;
+              this.fan(3, 0.5, spd * 0.85);
+              SF.Game.fx.rays(this.x, this.y, this.def.color, 8, this.size * 2, 0.4);
+            }
+            if (SF.chance(dt * 30)) SF.Game.fx.spark(this.x, this.y - this.size * 0.7, this.def.color, 2, 110, 0.22);
+          } else if (a.t < 2.2) {
+            if (!d.braked) {
+              d.braked = true;
+              this.ring(this.phase >= 2 ? 20 : 14, a.angle, spd * 0.78);
+              this.fan(5, 0.24, spd * 0.95);
+              SF.Game.fx.shake(9);
+              SF.Game.fx.ring(this.x, this.y, this.def.color, 16, 0.5, SF.W, 0.85);
+              SF.Audio.sfx('bigExplode');
+            }
+            this.y = SF.damp(this.y, d.y1 - 6, 5, dt);
+            this.x = SF.damp(this.x, dx, 2, dt);
+          } else {
+            const p = clamp((a.t - 2.2) / 0.95, 0, 1);
+            this.y = SF.lerp(d.y1, this.targetY, p);
+            this.x = SF.damp(this.x, SF.W / 2, 2.2, dt);
+          }
+          break;
+        }
+
+        // Four arms that keep turning while bullets fill the gaps — outrun, don't memorise.
+        case 'crossSweep':
+          this.at(a, 0.15, () => {
+            for (let i = 0; i < 4; i++) {
+              this.beam(aim + i * Math.PI / 2, {
+                warn: 1.0, active: 1.35, width: 13, sweep: (i % 2 ? -1 : 1) * 0.72,
+              });
+            }
+            SF.Audio.sfx('warn');
+          });
+          this.at(a, 1.0, () => {
+            this.ring(this.phase >= 2 ? 16 : 12, a.angle, spd * 0.62);
+            SF.Audio.sfx('hit');
+          });
+          this.at(a, 1.62, () => {
+            for (let i = 0; i < 4; i++) {
+              this.beam(aim + Math.PI / 4 + i * Math.PI / 2, {
+                warn: 0.72, active: 1.05, width: 11, sweep: (i % 2 ? 1 : -1) * 0.85,
+              });
+            }
+          });
+          this.at(a, 2.4, () => this.fan(this.phase >= 3 ? 7 : 5, 0.22, spd * 1.05));
+          break;
+
+        // Starfall from the top edge; one safe lane walks across the screen.
+        case 'cascade': {
+          if (!a.data) a.data = { col: 0 };
+          a.emit -= dt;
+          if (a.emit <= 0) {
+            a.emit = this.phase === 3 ? 0.095 : this.phase === 2 ? 0.105 : 0.12;
+            a.data.col++;
+            const cols = 7;
+            const step = SF.W / cols;
+            const skip = a.data.col % cols;
+            for (let c = 0; c < cols; c++) {
+              if (c === skip) continue;
+              if (this.phase === 3 && c === (skip + 1) % cols) continue;
+              const x = clamp((c + 0.5) * step + SF.rand(-9, 9), 12, SF.W - 12);
+              this.shotFrom(x, -22, Math.PI / 2 + SF.rand(-0.1, 0.1),
+                spd * (0.6 + (a.data.col % 3) * 0.17), 'shard', { r: 5 });
+            }
+          }
+          this.at(a, 0.2, () => SF.Audio.sfx('hit'));
+          this.at(a, 1.5, () => {
+            this.ring(this.phase >= 2 ? 14 : 10, aim, spd * 0.52);
+            this.fan(3, 0.42, spd * 1.1);
+          });
+          break;
+        }
+
+        // Seekers in waves — delayed lock-on and a capped turn rate keep them jukable.
+        case 'homingBarrage':
+          this.at(a, 0.15, () => this.seekerVolley(3));
+          this.at(a, 0.95, () => this.seekerVolley(3));
+          this.at(a, 1.75, () => this.seekerVolley(this.phase >= 2 ? 4 : 3));
+          if (this.phase === 3) this.at(a, 2.4, () => this.seekerVolley(3));
+          break;
+
+        // Counter-rotating arms weave a lattice that closes and reopens.
+        case 'spiralDouble':
+          a.emit -= dt;
+          if (a.emit <= 0) {
+            a.emit = this.phase >= 2 ? 0.075 : 0.09;
+            const arms = 2;
+            for (let i = 0; i < arms; i++) {
+              this.shot(a.angle + (i / arms) * TAU, spd * 0.66, 'orb');
+              this.shot(-a.angle + (i / arms) * TAU, spd * 0.82, 'shard');
+            }
+            a.angle += 0.2;
+          }
+          this.at(a, 1.25, () => this.fan(this.phase >= 2 ? 5 : 3, 0.3, spd * 1.05));
+          break;
+
+        // A ring of timed mines that shatter into a second pattern.
+        case 'mineRing':
+          this.at(a, 0.15, () => {
+            const n = this.phase >= 2 ? 12 : 9;
+            for (let i = 0; i < n; i++) {
+              this.shot((i / n) * TAU + a.angle, 122, 'mine', { r: 8, fuse: 1.5, split: 7 });
+            }
+            this.pulse(P.gold, this.size * 2.4);
+            SF.Audio.sfx('hit');
+          });
+          this.at(a, 1.05, () => {
+            const n = this.phase >= 2 ? 8 : 6;
+            for (let i = 0; i < n; i++) {
+              this.shot((i / n) * TAU + a.angle + 0.4, 70, 'mine', { r: 8, fuse: 1.1, split: 6 });
+            }
+            this.fan(3, 0.42, spd);
+          });
+          break;
+
+        // Signature overload: charge, then a triple shockwave with layered speeds.
+        case 'novaBurst':
+          if (a.t < 0.9 && SF.chance(dt * 32)) {
+            SF.Game.fx.ember(this.x + SF.rand(-this.size, this.size),
+              this.y + SF.rand(-this.size, this.size), this.def.color, 2.4, 0.3, 0, -70);
+          }
+          this.at(a, 0.9, () => {
+            SF.Game.fx.flash('255,220,140', 0.16);
+            SF.Game.fx.shake(12);
+            SF.Game.fx.ring(this.x, this.y, this.def.color, 12, 0.55, SF.W * 0.9, 0.9);
+            SF.Audio.sfx('bigExplode');
+            this.ring(this.phase >= 2 ? 22 : 18, a.angle, spd * 1.15, 'shard');
+          });
+          this.at(a, 1.45, () => {
+            this.ring(this.phase === 3 ? 26 : 22, a.angle + 0.12, spd * 0.72, 'orb');
+            this.pulse(this.def.color, SF.W);
+          });
+          this.at(a, 2.05, () => {
+            this.ring(this.phase >= 2 ? 18 : 12, a.angle + 0.25, spd * 0.95, 'shard');
+            this.fan(this.phase >= 3 ? 7 : 5, 0.2, spd * 1.1);
           });
           break;
       }
@@ -1700,16 +2084,12 @@
         this.attack = null;
         this.attackLabel = '';
         this.lockMove = false;
-        this.attackCd = Math.max(0.5, (this.phase === 3 ? 0.55 : this.phase === 2 ? 0.72 : 0.92));
-        if (this.phase === 3 && SF.chance(0.55)) {
-          // enrage ring
-          const pl2 = SF.Game.player;
-          const aim2 = pl2 ? Math.atan2(pl2.y - this.y, pl2.x - this.x) : Math.PI / 2;
-          for (let i = 0; i < 16; i++) {
-            const ang = (i / 16) * TAU + aim2;
-            SF.Game.enemyBullets.push(new Bullet(this.x, this.y + this.size * 0.3,
-              Math.cos(ang) * spd * 0.75, Math.sin(ang) * spd * 0.75, { kind: 'orb', r: 6, life: 9 }));
-          }
+        // Phase 3 chains every third spell, and a desperate hull never pauses at all.
+        const chain = this.phase === 3 && (this.desperate || this.spellCount % 3 === 0);
+        this.attackCd = chain ? 0.16 : Math.max(0.3,
+          this.phase === 3 ? 0.42 : this.phase === 2 ? 0.62 : 0.85);
+        if (this.phase === 3 && SF.chance(this.desperate ? 0.9 : 0.65)) {
+          this.ring(this.desperate ? 22 : 16, aim, spd * 0.75);
         }
       }
     }

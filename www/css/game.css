@@ -422,6 +422,17 @@ kbd {
   letter-spacing: .14em;
   color: var(--rose);
 }
+.boss-phase.is-critical {
+  color: var(--gold);
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 210, 122, 0.45);
+  border-radius: 999px;
+  animation: bossCriticalPulse 0.85s ease-in-out infinite;
+}
+@keyframes bossCriticalPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 rgba(255, 210, 122, 0); }
+  50% { opacity: .72; box-shadow: 0 0 12px rgba(255, 210, 122, 0.35); }
+}
 .boss-track {
   position: relative;
   height: 6px;
@@ -512,7 +523,15 @@ kbd {
   text-transform: uppercase;
   white-space: nowrap;
   min-width: 0;
+  pointer-events: auto;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: border-color .2s, background .2s, transform .12s;
 }
+.weapon-chip:hover { border-color: rgba(105,245,220,.24); background: rgba(105,245,220,.05); }
+.weapon-chip:active { transform: scale(.97); }
+.weapon-chip[disabled] { opacity: .5; pointer-events: none; }
 .weapon-dot {
   width: 4px;
   height: 4px;

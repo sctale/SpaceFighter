@@ -67,7 +67,7 @@
       this.canvas = canvas;
       this.keys = new Set();
       this.pointer = { x: SF.W / 2, y: SF.H * 0.8, down: false, type: 'mouse', inside: false, id: null };
-      this.pressed = { dash: false, nova: false, pause: false, mute: false, start: false, restart: false };
+      this.pressed = { dash: false, nova: false, pause: false, mute: false, start: false, restart: false, weapon: false, weapon1: false, weapon2: false, weapon3: false };
       this.hasTouch = false;
       this.dragStart = null;
       this.attach();
@@ -90,6 +90,10 @@
         if (low === 'm') this.pressed.mute = true;
         if (low === 'enter') this.pressed.start = true;
         if (low === 'r') this.pressed.restart = true;
+        if (low === 'q' || low === 'e' || low === 'f') this.pressed.weapon = true;
+        if (low === '1') this.pressed.weapon1 = true;
+        if (low === '2') this.pressed.weapon2 = true;
+        if (low === '3') this.pressed.weapon3 = true;
       }, { passive: false });
 
       window.addEventListener('keyup', (e) => {

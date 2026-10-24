@@ -253,7 +253,8 @@
         { t: 8.4, html: '贴近弹幕边缘 <b>擦弹</b> · 积攒 NOVA', duration: 3800 },
         { t: 15.6, html: touchUI ? 'NOVA 就绪后点击 <b>星爆</b>' : 'NOVA 就绪后按 <b>X</b> 释放星爆', duration: 3600 },
         { t: 22.5, html: touchUI ? '危险时点 <b>冲刺</b> · 短暂无敌穿越弹幕' : '<b>SPACE</b> 冲刺穿越弹幕 · 短暂无敌', duration: 3800 },
-        { t: 31, html: '拾取 <b>核心</b> 换弹道 · <b>护盾</b> 可叠三层 · <b>僚机</b> 各司其职', duration: 4600 },
+        { t: 31, html: '拾取 <b>棱镜 / 蜂群</b> 解锁武器线 · 各自升到 <b>LV.5</b>', duration: 4600 },
+        { t: 40, html: touchUI ? '点 <b>武器卡</b> 换弹道 · 受伤只掉当前武器等级' : '<b>Q</b> 循环武器 · 受伤只掉当前武器等级', duration: 4800 },
       ];
       this.render();
     }
@@ -775,7 +776,7 @@
         if (!remove) {
           for (let j = this.enemies.length - 1; j >= 0; j--) {
             const e = this.enemies[j];
-            if (e.dead) continue;
+            if (!e.targetable()) continue;
             const dx = b.x - e.x, dy = b.y - e.y;
             const rr = e.radius + b.r;
             if (dx * dx + dy * dy < rr * rr && canHit(e)) {
@@ -825,7 +826,7 @@
       if (player.invuln <= 0 && player.dashT <= 0) {
         for (let j = this.enemies.length - 1; j >= 0; j--) {
           const e = this.enemies[j];
-          if (e.dead) continue;
+          if (!e.targetable()) continue;
           const dx = e.x - player.x, dy = e.y - (player.y + 2);
           const rr = e.radius + 10;
           if (dx * dx + dy * dy < rr * rr) {
@@ -946,8 +947,8 @@
       }
       if (!SF.chance(e.drop || 0)) return;
       const table = this.player && this.player.level < 5
-        ? [['power', 40], ['shield', 18], ['drone', 14], ['core', 9], ['reflect', 6], ['life', 4], ['gem', 9]]
-        : [['shield', 24], ['drone', 22], ['core', 15], ['reflect', 9], ['life', 5], ['power', 16], ['gem', 9]];
+        ? [['power', 38], ['shield', 17], ['drone', 13], ['prism', 6], ['swarm', 6], ['reflect', 5], ['life', 4], ['gem', 11]]
+        : [['shield', 22], ['drone', 20], ['prism', 9], ['swarm', 9], ['reflect', 7], ['life', 4], ['power', 20], ['gem', 9]];
       let roll = Math.random() * 100;
       let type = 'gem';
       for (const [t, w] of table) {
@@ -966,8 +967,10 @@
       if (this.player && this.player.level < 5 && SF.chance(0.4)) return 'power';
       if (this.player && this.player.shieldCharges < 3 && SF.chance(0.45)) return 'shield';
       if (this.player && this.player.drones.length < 3 && SF.chance(0.55)) return 'drone';
-      if (this.player && SF.chance(0.45)) return SF.chance(0.5) ? 'core' : 'reflect';
-      return SF.pick(['power', 'core', 'shield', 'life']);
+      if (this.player && !this.player.weapons.prism.unlocked && SF.chance(0.4)) return 'prism';
+      if (this.player && !this.player.weapons.swarm.unlocked && SF.chance(0.4)) return 'swarm';
+      if (this.player && SF.chance(0.45)) return SF.chance(0.5) ? 'prism' : 'reflect';
+      return SF.pick(['power', 'prism', 'shield', 'life']);
     }
 
     collectPickup(p) {
@@ -1015,14 +1018,21 @@
           this.fx.ring(player.x, player.y, P.teal, 12, 0.5, 78);
           this.fx.sparkle(p.x, p.y, P.gold, 16);
           break;
-        case 'core': {
-          const mode = player.weaponMode === 'prism' ? 'swarm' : player.weaponMode === 'swarm' ? 'prism' : SF.pick(['prism', 'swarm']);
-          player.setWeapon(mode, 24);
-          SF.Audio.sfx('power');
-          this.pickupMsg('WEAPON // ' + WEAPON_LABELS[mode], P.gold, 12);
-          this.fx.ring(player.x, player.y, P.gold, 16, 0.5, 100);
-          this.fx.text(player.x, player.y - 62, '24s', P.gold, 10, { life: 0.9 });
-          this.fx.sparkle(p.x, p.y, P.gold, 16);
+        case 'prism':
+        case 'swarm': {
+          const result = player.unlockWeapon(p.type);
+          if (result === 'max') {
+            this.score += 1200;
+            SF.Audio.sfx('pickup');
+            this.pickupMsg(p.type === 'prism' ? '棱镜 MAX +1200' : '蜂群 MAX +1200', P.gold, 11);
+          } else {
+            SF.Audio.sfx('power');
+            const label = p.type === 'prism' ? '棱镜贯穿' : '蜂群追踪';
+            this.pickupMsg(result === 'unlocked' ? '解锁 ' + label : label + ' LV.' + player.weapons[p.type].level,
+              p.type === 'prism' ? P.violet : P.gold, 12);
+            this.fx.ring(player.x, player.y, p.type === 'prism' ? P.violet : P.gold, 16, 0.5, 100);
+            this.fx.sparkle(p.x, p.y, p.type === 'prism' ? P.violet : P.gold, 16);
+          }
           break;
         }
         case 'drone': {
@@ -1056,8 +1066,7 @@
     }
 
     playerWeaponExpired() {
-      this.pickupMsg('WEAPON // ' + WEAPON_LABELS.pulse, P.teal, 11);
-      SF.Audio.sfx('pickup');
+      // Kept as a compatibility no-op for older debug scripts.
     }
 
     playerHit() {
@@ -1105,7 +1114,7 @@
       this.lives = Math.max(0, this.lives - 1);
       this.combo = 0;
       this.comboTimer = 0;
-      player.level = Math.max(1, player.level - 1);
+      player.downgradeActive();
       player.grantInvuln(2.8);
       player.x = SF.W / 2;
       player.y = SF.H - 120;
@@ -1195,12 +1204,29 @@
     }
 
     onBossPhase(boss) {
+      // Mercy window: the board is wiped so a phase change reads as a breath,
+      // not as an unfair wall of leftover bullets.
+      this.clearEnemyBullets(true);
+      this.lasers.length = 0;
+      if (this.player && this.player.alive) this.player.grantInvuln(0.75);
       this.fx.shake(10);
       this.fx.flash('255,111,145', 0.2);
       this.hitstop(0.06);
       this.haptic([20, 40, 20]);
       if (this.uiReady) {
         this.ui.announce('PHASE ' + boss.phase, '核心过载 · 弹幕强化', { alert: true, duration: 1400 });
+      }
+    }
+
+    onBossDesperation(boss) {
+      this.fx.shake(16);
+      this.fx.flash('255,210,120', 0.3);
+      this.hitstop(0.08);
+      this.haptic([30, 30, 30, 60]);
+      SF.Audio.sfx('warn');
+      this.fx.rays(boss.x, boss.y, boss.def.color, 16, boss.size * 4, 0.7);
+      if (this.uiReady) {
+        this.ui.announce('OVERLOAD', '核心临界 · 招式不再停顿', { alert: true, duration: 1600 });
       }
     }
 
@@ -1242,7 +1268,8 @@
       // guaranteed salvage — deployed within reach
       const px = this.player ? this.player.x : SF.W / 2;
       const py = clamp(this.player ? this.player.y - 240 : SF.H * 0.5, SF.H * 0.28, SF.H * 0.72);
-      const loot = ['power', 'core'];
+      const loot = ['power', this.player && !this.player.weapons.prism.unlocked ? 'prism'
+        : this.player && !this.player.weapons.swarm.unlocked ? 'swarm' : 'power'];
       loot.push(this.player && this.player.shieldCharges >= 2 ? 'reflect' : 'shield');
       loot.push(this.player && this.player.drones.length < 3 ? 'drone' : 'life');
       if (this.lives < 3) loot.push('life');
@@ -1428,8 +1455,9 @@
         level: p ? p.level : 0,
         shield: p ? p.shieldCharges : 0,
         reflect: p ? Math.round(p.reflectT * 10) / 10 : 0,
-        weaponMode: p ? p.weaponMode : null,
-        weaponTimer: p ? Math.round(p.weaponTimer * 10) / 10 : 0,
+        weaponMode: p ? p.activeWeapon : null,
+        weaponLevels: p ? Object.keys(p.weapons).reduce((acc, k) => { acc[k] = p.weapons[k].level; return acc; }, {}) : {},
+        unlockedWeapons: p ? p.unlockedWeapons() : [],
         drones: p ? p.drones.map((d) => d.kind) : [],
         player: p ? { x: p.x, y: p.y, alive: p.alive, invuln: p.invuln } : null,
         boss: this.boss ? {
