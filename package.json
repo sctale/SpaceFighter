@@ -1,0 +1,26 @@
+{
+  "name": "space-fighter",
+  "version": "2.2.0",
+  "private": true,
+  "description": "太空战斗机 · Aurora Rift — 深空竖版街机弹幕射击",
+  "author": "sctale",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sctale/SpaceFighter.git"
+  },
+  "scripts": {
+    "sync": "cap sync android",
+    "android:build": "cd android && ./gradlew assembleRelease",
+    "android:build:win": "cd android && gradlew.bat assembleRelease",
+    "test": "node .tools/verify.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
+    "playwright-core": "^1.64.1"
+  }
+}
