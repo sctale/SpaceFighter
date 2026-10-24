@@ -573,43 +573,31 @@ kbd {
 .weapon-chip.is-prism .weapon-pips b.is-on { background: var(--rose); box-shadow: 0 0 6px rgba(255, 111, 145, 0.6); }
 .weapon-chip.is-swarm .weapon-pips b.is-on { background: var(--gold); box-shadow: 0 0 6px rgba(255, 210, 122, 0.6); }
 
-.weapon-mod {
-  font-style: normal;
-  padding: 1px 4px;
-  border: 1px solid rgba(255, 210, 122, 0.45);
-  border-radius: 2px;
-  background: rgba(255, 210, 122, 0.08);
-  color: var(--gold);
-  letter-spacing: .08em;
-}
-.weapon-mod[hidden] { display: none; }
 
-/* Resonance: one chevron per completed weapon swap */
-.resonance { display: flex; align-items: center; gap: 3px; height: 10px; }
-.resonance b {
-  width: 4px;
-  height: 9px;
-  background: rgba(105, 245, 220, 0.14);
-  clip-path: polygon(50% 0, 100% 42%, 50% 100%, 0 42%);
-  transition: background .18s, box-shadow .18s;
+/* Resonance: a small gold badge counting the current chain of swaps */
+.res-badge {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: .08em;
+  padding: 1px 4px;
+  border: 1px solid rgba(105, 245, 220, 0.4);
+  border-radius: 999px;
+  background: rgba(105, 245, 220, 0.08);
+  color: var(--teal);
+  flex: 0 0 auto;
 }
-.resonance b.is-on {
-  background: var(--teal);
-  box-shadow: 0 0 6px rgba(105, 245, 220, 0.55);
+.res-badge.is-hot {
+  border-color: rgba(255, 210, 122, 0.55);
+  background: rgba(255, 210, 122, 0.1);
+  color: var(--gold);
 }
-.resonance.is-hot b.is-on {
-  background: var(--gold);
-  box-shadow: 0 0 7px rgba(255, 210, 122, 0.65);
-}
+.res-badge[hidden] { display: none; }
 
 .shield-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: .12em;
-  color: rgba(155, 140, 255, 0.85);
+  flex: 0 0 auto;
 }
 .shield-chip[hidden] { display: none; }
 .shield-pips { display: flex; gap: 3px; }

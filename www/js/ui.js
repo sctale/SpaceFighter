@@ -32,8 +32,8 @@
       this.el = {
         stage: $('stage'),
         score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), sector: $('hudSector'), sectorName: $('hudSectorName'),
-        lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'), weaponMod: $('weaponMod'),
-        weaponRing: $('weaponRing'), resonanceChips: $('resonanceChips'),
+        lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'),
+        weaponRing: $('weaponRing'), resonanceBadge: $('resonanceBadge'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
         comboBox: $('comboBox'), comboMult: $('comboMult'), comboCount: $('comboCount'), comboFill: $('comboFill'),
         novaPct: $('novaPct'),
@@ -55,7 +55,6 @@
 
       this.buildWeaponPips();
       this.buildShieldPips();
-      this.buildResonance();
       this.bind();
       this.applySettings();
       this.updateMenuStats();
@@ -134,13 +133,6 @@
         const b = document.createElement('b');
         wrap.appendChild(b);
       }
-    }
-
-    buildResonance() {
-      const wrap = this.el.resonanceChips;
-      if (!wrap) return;
-      wrap.innerHTML = '';
-      for (let i = 0; i < 5; i++) wrap.appendChild(document.createElement('b'));
     }
 
     setState(state) {
@@ -232,13 +224,6 @@
         this.cache.weaponMode = p.activeWeapon;
       }
       if (p) {
-        const unlocked = p.unlockedWeapons().length;
-        const mod = unlocked > 1 ? '×' + unlocked : '';
-        if (mod !== this.cache.weaponMod) {
-          this.cache.weaponMod = mod;
-          el.weaponMod.hidden = !mod;
-          el.weaponMod.textContent = mod;
-        }
         // charge ring + detune state: the weapon tells you when to swap
         const w = p.weapons[p.activeWeapon];
         const charge = Math.round(w.charge);
@@ -249,16 +234,17 @@
         if (w.detuned !== this.cache.weaponDetuned) {
           el.weaponChip.classList.toggle('is-detuned', w.detuned);
           el.weaponChip.classList.toggle('is-low', !w.detuned && w.charge < 40);
-          if (w.detuned) el.weaponName.textContent = '失谐 · ' + WEAPON_NAMES[p.activeWeapon][0];
+          if (w.detuned) el.weaponName.textContent = '失谐';
           else if (this.cache.weaponDetuned !== null) {
             const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
             el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
           }
           this.cache.weaponDetuned = w.detuned;
         }
-        if (p.resonance !== this.cache.resonance && el.resonanceChips) {
-          Array.from(el.resonanceChips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.resonance));
-          el.resonanceChips.classList.toggle('is-hot', p.resonance >= 3);
+        if (p.resonance !== this.cache.resonance && el.resonanceBadge) {
+          el.resonanceBadge.hidden = p.resonance <= 0;
+          el.resonanceBadge.textContent = '共' + p.resonance;
+          el.resonanceBadge.classList.toggle('is-hot', p.resonance >= 3);
           this.cache.resonance = p.resonance;
         }
         if (p.shieldCharges !== this.cache.shield) {

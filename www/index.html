@@ -54,18 +54,17 @@
       <footer class="hud-bottom" id="hudBottom">
         <div class="dash-left">
           <div class="lives" id="hudLives" aria-label="剩余生命"></div>
+          <span class="shield-chip" id="shieldChip" hidden>
+            <i class="shield-pips" id="shieldPips"></i>
+          </span>
           <button class="weapon-chip" id="weaponChip" type="button" aria-label="切换武器">
             <span class="weapon-ring" id="weaponRing" aria-hidden="true"></span>
             <span class="weapon-copy">
               <span id="weaponName">脉冲炮</span>
               <i class="weapon-pips" id="weaponPips"></i>
             </span>
-            <em class="weapon-mod" id="weaponMod" hidden></em>
+            <em class="res-badge" id="resonanceBadge" hidden>共0</em>
           </button>
-          <div class="resonance" id="resonanceChips" aria-label="共鸣层数"></div>
-          <div class="shield-chip" id="shieldChip" hidden>
-            <i class="shield-pips" id="shieldPips"></i>
-          </div>
         </div>
         <div class="dash-right">
           <button class="ring-btn ring-btn--dash" id="btnDash" type="button" aria-label="冲刺">
