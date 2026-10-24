@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [2.5.3] - 2026-10-24
+
+### 修复
+
+- 游戏内主菜单的版本号还停在 v2.4：新增 `.tools/sync-version.js`，从 `package.json` 读取版本号自动改写菜单页脚，并接入 `npm run sync` 与 `npm test` 前置钩子；`npm test` 新增「游戏内版本号与 package.json 一致」检查，此后版本号不会再漂移
+
 ## [2.5.2] - 2026-10-24
 
 ### 修复

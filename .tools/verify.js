@@ -18,6 +18,13 @@ const SHOTS = path.join(__dirname, 'shots');
   await page.screenshot({ path: path.join(SHOTS, '51-play-level2.png') });
   console.log('START', JSON.stringify(await page.evaluate(() => __SF.snapshot())));
 
+  // the in-game version marker must match package.json
+  const pkg = require(path.join(__dirname, '..', 'package.json'));
+  const foot = await page.evaluate(() => document.querySelector('.menu-foot').textContent);
+  const versionOk = foot.includes('v' + pkg.version);
+  console.log('VERSION', foot.trim(), versionOk ? 'OK' : `MISMATCH (expected v${pkg.version})`);
+  if (!versionOk) process.exitCode = 1;
+
   // keyboard controls
   const x0 = await page.evaluate(() => __SF.game.player.x);
   await page.keyboard.down('d');
