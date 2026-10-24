@@ -116,6 +116,145 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     !offscreen.offscreenShootable && !offscreen.farTargetable && offscreen.nearHp < 400,
     offscreen);
 
+  /* ---------- 3.5 speed/power triangle, charge, resonance, hit penalty ---------- */
+  const tri = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    const out = {};
+    for (const wname of ['pulse', 'prism', 'swarm']) {
+      g.playerBullets.length = 0;
+      p.weapons[wname].unlocked = true;
+      p.selectWeapon(wname);
+      p.level = 5; p.weapons[wname].level = 5;
+      p.weapons[wname].charge = 100; p.weapons[wname].detuned = false;
+      p.overdrive = 0; p.resonance = 0; p.resT = 0;
+      p.shoot();
+      const bs = g.playerBullets;
+      out[wname] = {
+        kinds: [...new Set(bs.map(b => b.kind))],
+        avgSpeed: Math.round(bs.reduce((s, b) => s + Math.hypot(b.vx, b.vy), 0) / bs.length),
+        maxDmg: Math.max(...bs.map(b => b.dmg)),
+      };
+    }
+    return out;
+  });
+  fail('speed triangle pulse > swarm > prism',
+    tri.pulse.avgSpeed > tri.swarm.avgSpeed && tri.swarm.avgSpeed > tri.prism.avgSpeed, tri);
+  fail('power triangle prism > swarm > pulse',
+    tri.prism.maxDmg > tri.swarm.maxDmg && tri.swarm.maxDmg > tri.pulse.maxDmg, tri);
+
+  const charge = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true;
+      p.weapons[k].charge = 100; p.weapons[k].detuned = false;
+    }
+    p.selectWeapon('pulse'); p.level = 5; p.weapons.pulse.level = 5;
+    p.resonance = 0; p.resT = 0; p.overdrive = 0;
+    p.x = SF.W * 0.5; p.y = SF.H * 0.8;
+    const dt = 1 / 60;
+    let t = 0, detunedAt = null;
+    while (t < 30) {
+      p.update(dt, g.input);
+      for (let j = g.playerBullets.length - 1; j >= 0; j--) if (!g.playerBullets[j].update(dt, p)) g.playerBullets.splice(j, 1);
+      if (p.weapons.pulse.detuned && detunedAt === null) detunedAt = +t.toFixed(1);
+      t += dt;
+    }
+    const detunedMul = p.damageMul();
+    p.selectWeapon('prism');                        // rested line -> resonance
+    const resonanceAfterSwap = p.resonance;
+    const swapMul = p.damageMul();
+    const pulseBefore = p.weapons.pulse.charge;
+    for (let i = 0; i < 60 * 5; i++) p.update(dt, g.input);   // keep firing prism
+    const pulseRecovered = Math.round(p.weapons.pulse.charge - pulseBefore);
+    p.addDrone('gunner');
+    const before = { level: p.level, drones: p.drones.length, charge: Math.round(p.weapons.prism.charge), res: p.resonance };
+    const lost = p.applyHitPenalty();
+    const after = { level: p.level, drones: p.drones.length, charge: Math.round(p.weapons.prism.charge), res: p.resonance };
+    return { detunedAt, detunedMul, resonanceAfterSwap, swapMul, pulseRecovered, before, after, lost };
+  });
+  fail('sustained fire detunes a line (8-20s) at a softer bite',
+    charge.detunedAt > 8 && charge.detunedAt < 20 && Math.abs(charge.detunedMul - 0.55) < 0.01, charge);
+  fail('swapping to a charged line stacks resonance',
+    charge.resonanceAfterSwap === 1 && charge.swapMul > charge.detunedMul, charge);
+  fail('holstered lines refill', charge.pulseRecovered > 40, charge);
+  fail('a hit costs charge, resonance and a wingman',
+    charge.after.drones === charge.before.drones - 1 && charge.after.res === 0
+    && charge.after.charge < charge.before.charge && charge.lost === 'gunner', charge);
+
+  const droneAmmo = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    const out = {};
+    p.drones.length = 0;
+    ['gunner', 'lance'].forEach(k => p.addDrone(k));
+    for (const wname of ['pulse', 'prism', 'swarm']) {
+      p.weapons[wname].unlocked = true;
+      p.selectWeapon(wname); p.level = 3; p.weapons[wname].level = 3;
+      p.weapons[wname].charge = 100; p.weapons[wname].detuned = false;
+      g.playerBullets.length = 0;
+      p.drones.forEach(d => { d.fireT = 0; });
+      for (let i = 0; i < 100; i++) p.update(1 / 60, g.input);
+      out[wname] = [...new Set(g.playerBullets.map(b => b.kind))];
+    }
+    p.drones.length = 0;
+    return out;
+  });
+  fail('wingmen change ammo with the active line',
+    droneAmmo.pulse.includes('drone') && droneAmmo.prism.includes('beam') && droneAmmo.swarm.includes('micro'),
+    droneAmmo);
+
+  const tints = await page.evaluate(() => {
+    const p = __SF.game.player;
+    return {
+      pulse: SF.WEAPON_LINES.pulse.tint, prism: SF.WEAPON_LINES.prism.tint, swarm: SF.WEAPON_LINES.swarm.tint,
+      current: p.line().tint, active: p.activeWeapon,
+    };
+  });
+  fail('each line paints the hull its own colour',
+    new Set([tints.pulse, tints.prism, tints.swarm]).size === 3 && tints.current === tints[tints.active], tints);
+
+  const novaEco = await page.evaluate(() => {
+    const p = __SF.game.player;
+    p.overdrive = 0; p.resonance = 0;
+    p.weapons.swarm.charge = 0; p.weapons.swarm.detuned = true;
+    p.selectWeapon('swarm');
+    p.nova = 0; p.addNova(10);
+    const detunedGain = p.nova;
+    p.weapons.swarm.charge = 100; p.weapons.swarm.detuned = false;
+    p.nova = 0; p.addNova(10);
+    return { detunedGain, healthyGain: p.nova };
+  });
+  fail('a detuned line feeds nova slower', novaEco.detunedGain < novaEco.healthyGain * 0.6, novaEco);
+
+  const hud = await page.evaluate(() => {
+    const btn = document.getElementById('btnNova');
+    const chip = document.getElementById('weaponChip');
+    const strip = document.getElementById('hudBottom');
+    const r = btn ? btn.getBoundingClientRect() : null;
+    return {
+      hasStrip: !!strip, hasRingBtn: !!btn, hasChip: !!chip,
+      ringConic: btn ? getComputedStyle(btn, '::before').backgroundImage.includes('conic-gradient') : false,
+      novaPctVar: btn ? btn.style.getPropertyValue('--pct') : null,
+      legacyGone: !document.getElementById('touchActions') && !document.querySelector('.nova-track'),
+      ringBottomGap: r ? Math.round(innerHeight - r.bottom) : null,
+      stripH: strip ? Math.round(strip.getBoundingClientRect().height) : null,
+    };
+  });
+  fail('nova charges on the ring itself, legacy cards gone',
+    hud.hasRingBtn && hud.ringConic && hud.legacyGone && hud.hasChip, hud);
+
+  const clampY = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    p.y = SF.H - 10;
+    p.update(1 / 60, g.input);
+    return {
+      maxY: Math.round(p.y),
+      floor: SF.H - 104,
+      stripH: Math.round(document.getElementById('hudBottom').getBoundingClientRect().height),
+    };
+  });
+  fail('the hull stays clear of the instrument strip',
+    clampY.maxY <= clampY.floor + 2 && clampY.stripH <= 70, clampY);
+
   /* ---------- 4. weapon levels are worth something ---------- */
   const dps = {};
   for (const weapon of ['pulse', 'prism', 'swarm']) {
@@ -127,6 +266,8 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
         p.weapons[weapon].unlocked = true;
         p.selectWeapon(weapon);
         p.level = level; p.weapons[weapon].level = level; p.overdrive = 0;
+        p.resonance = 0; p.resT = 0;
+        for (const k of ['pulse', 'prism', 'swarm']) { p.weapons[k].charge = 100; p.weapons[k].detuned = false; }
         __SF.startBoss();
         const waitBoss = async () => {
           for (let i = 0; i < 60 && !g.boss; i++) await new Promise(r => setTimeout(r, 50));
@@ -177,25 +318,28 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
       g.boss.attack = null;
       g.boss.startAttack(n);
       const dt = 1 / 60;
-      let lasers = 0, fired = 0;
+      let lasers = 0, fired = 0, firedAt = null;
       const seen = new Set();
       const eBefore = g.enemies.length;
-      for (let i = 0; i < 300; i++) {
+      for (let i = 0; i < 240; i++) {
         g.boss.update(dt);
         for (let j = g.enemyBullets.length - 1; j >= 0; j--) {
           const b = g.enemyBullets[j];
-          if (!seen.has(b)) { seen.add(b); fired++; }
+          if (!seen.has(b)) { seen.add(b); fired++; if (firedAt === null) firedAt = i; }
           if (!b.update(dt, g.player)) g.enemyBullets.splice(j, 1);
         }
         for (let j = g.enemies.length - 1; j >= 0; j--) if (!g.enemies[j].update(dt, g.player)) g.enemies.splice(j, 1);
         for (const l of g.lasers) lasers = Math.max(lasers, g.lasers.length);
         for (let j = g.lasers.length - 1; j >= 0; j--) if (!g.lasers[j].update(dt)) g.lasers.splice(j, 1);
-        if (!g.boss.attack) break;
       }
       const kinds = {};
       for (const b of g.enemyBullets) kinds[b.kind] = (kinds[b.kind] || 0) + 1;
       const spawned = Math.max(0, g.enemies.length - eBefore);
-      const out = { spell: n, label: SF.ATTACK_LABELS[n], fired, live: g.enemyBullets.length, kinds, lasers, spawned };
+      const out = {
+        spell: n, label: SF.ATTACK_LABELS[n], fired, firedAt, live: g.enemyBullets.length,
+        kinds, lasers, spawned,
+        state: { attack: g.boss.attack && g.boss.attack.name, phase: g.boss.phase, entering: g.boss.entering, dying: g.boss.dying },
+      };
       g.enemies.length = 0;
       return out;
     }, name);
@@ -277,6 +421,17 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
         let t = 0, hits = 0;
         g.playerHit = () => { hits++; };          // immortal rig: only measure the clock
         while (!b.dying && t < 120) {
+          // rotate lines the way the charge economy demands
+          const cur = p.weapons[p.activeWeapon];
+          if (cur.detuned || cur.charge < 22) {
+            let best = null;
+            for (const k of p.unlockedWeapons()) {
+              if (k !== p.activeWeapon && p.weapons[k].charge > 55 && (!p.weapons[k].detuned)) {
+                if (!best || p.weapons[k].charge > p.weapons[best].charge) best = k;
+              }
+            }
+            if (best) p.selectWeapon(best);
+          }
           p.x = SF.W * 0.5; p.y = SF.H * 0.82;      // stationary rig: pure race-against-clock
           p.update(dt, g.input); b.update(dt); t += dt;
           for (let j = g.enemyBullets.length - 1; j >= 0; j--) if (!g.enemyBullets[j].update(dt, p)) g.enemyBullets.splice(j, 1);
@@ -292,11 +447,11 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     return out;
   }
   const fresh = await fightRun('S1 rookie L2, no wingmen', { sector: 1, weapon: 'pulse', levels: { pulse: 2 }, drones: [] });
-  const mid = await fightRun('S3 mid L3 + 2 wingmen', { sector: 3, weapon: 'pulse', levels: { pulse: 3 }, drones: ['gunner', 'lance'] });
+  const mid = await fightRun('S3 mid, 3 lines L3 + 2 wingmen', { sector: 3, weapon: 'pulse', levels: { pulse: 3, prism: 3, swarm: 3 }, drones: ['gunner', 'lance'] });
   const maxed = await fightRun('S5 maxed + 3 wingmen', { sector: 5, weapon: 'prism', levels: { pulse: 5, prism: 5, swarm: 5 }, drones: ['gunner', 'lance', 'aegis'] });
-  fail('rookie sees all 3 phases in 25-60s', fresh.kills && fresh.seconds > 25 && fresh.seconds < 60 && fresh.phaseReached >= 3, fresh);
-  fail('mid build fight is 15-50s', mid.kills && mid.seconds > 15 && mid.seconds < 50 && mid.phaseReached >= 3, mid);
-  fail('maxed build fight is 12-45s', maxed.kills && maxed.seconds > 12 && maxed.seconds < 45 && maxed.phaseReached >= 3, maxed);
+  fail('rookie sees all 3 phases in 15-60s', fresh.kills && fresh.seconds > 15 && fresh.seconds < 60 && fresh.phaseReached >= 3, fresh);
+  fail('mid build fight is 20-65s', mid.kills && mid.seconds > 20 && mid.seconds < 65 && mid.phaseReached >= 3, mid);
+  fail('maxed build fight is 20-60s', maxed.kills && maxed.seconds > 20 && maxed.seconds < 60 && maxed.phaseReached >= 3, maxed);
 
   /* ---------- 8. an idle hull actually dies ---------- */
   const risk = await page.evaluate(() => {
