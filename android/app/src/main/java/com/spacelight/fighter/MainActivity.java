@@ -12,7 +12,20 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        pinWebViewTextZoom();
         enterImmersiveMode();
+    }
+
+    /**
+     * Android scales WebView text by the system font scale (settings.textZoom).
+     * A game HUD must lay out identically on every device, so pin the zoom to
+     * 100% — otherwise oversized system fonts stretch the menus and make
+     * internally scrolled panels jump around when controls gain focus.
+     */
+    private void pinWebViewTextZoom() {
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().getSettings().setTextZoom(100);
+        }
     }
 
     @Override

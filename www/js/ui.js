@@ -107,6 +107,12 @@
         if (next) SF.vibrate(20);
         this.toast(next ? '触感反馈已开启' : '触感反馈已关闭');
       });
+      // drop focus after toggling: keeps the panel from focus-scrolling and
+      // stops SPACE from re-flipping the switch instead of dashing
+      for (const id of ['toggleSound', 'toggleShake', 'toggleFx', 'toggleHaptic']) {
+        const el = this.el[id];
+        if (el) el.addEventListener('click', () => el.blur());
+      }
 
       // prevent touch-actions from dragging the ship
       ['btnDash', 'btnNova'].forEach((k) => {

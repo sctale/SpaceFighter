@@ -791,7 +791,9 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* cards center themselves with margin-block:auto (see panel-card below);
+     flex-start keeps overflowing cards reachable at the top edge */
+  justify-content: flex-start;
   padding: calc(var(--pad) + env(safe-area-inset-top)) var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));
   opacity: 0;
   visibility: hidden;
@@ -804,6 +806,15 @@ kbd {
 .screen::-webkit-scrollbar { display: none; }
 .screen.is-active { opacity: 1; visibility: visible; pointer-events: auto; }
 .screen--menu { overflow: hidden; }
+
+/* Safe vertical centering: when a card is taller than the screen it must pin
+   to the top edge and scroll inside the screen, never jump around when a
+   control inside it gains focus. */
+.screen--pause .panel-card,
+.screen--over .panel-card {
+  margin-block: auto;
+  flex: 0 0 auto;
+}
 
 .overline {
   display: flex;
