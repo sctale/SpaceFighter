@@ -254,7 +254,7 @@
         { t: 15.6, html: touchUI ? 'NOVA 就绪后点击 <b>星爆</b>' : 'NOVA 就绪后按 <b>X</b> 释放星爆', duration: 3600 },
         { t: 22.5, html: touchUI ? '危险时点 <b>冲刺</b> · 短暂无敌穿越弹幕' : '<b>SPACE</b> 冲刺穿越弹幕 · 短暂无敌', duration: 3800 },
         { t: 31, html: '拾取 <b>棱镜 / 蜂群</b> 解锁武器线 · 各自升到 <b>LV.5</b>', duration: 4600 },
-        { t: 40, html: touchUI ? '点 <b>武器卡</b> 换弹道 · 受伤只掉当前武器等级' : '<b>Q</b> 循环武器 · 受伤只掉当前武器等级', duration: 4800 },
+        { t: 40, html: touchUI ? '武器线会 <b>耗尽蓄能</b> · 打空就换线回充，切换攒 <b>共鸣</b>' : '武器线会 <b>耗尽蓄能</b> · 按 <b>Q</b> 换线回充，切换攒 <b>共鸣</b>', duration: 5200 },
       ];
       this.render();
     }
@@ -723,7 +723,7 @@
           const dx = b.x - z.x, dy = b.y - z.y;
           if (dx * dx + dy * dy < z.r * z.r) {
             this.enemyBullets.splice(i, 1);
-            p.addNova(z.field ? 0.5 : 1.2);
+            p.addNova(z.field ? 0.25 : 0.6);
             this.fx.spark(b.x, b.y, z.field ? P.gold : P.violet, 2, 60, 0.18);
             cleared++;
             any = true;
@@ -767,7 +767,7 @@
           const ny = (b.y - this.boss.y) / ry;
           if (nx * nx + ny * ny <= 1 && canHit(this.boss)) {
             this.boss.hit(b.dmg);
-            if (player) player.addNova(0.15);
+            if (player) player.addNova(0.05);
             this.fx.impact(b.x, b.y, this.boss.def.color, 1.15);
             consumeHit();
           }
@@ -806,7 +806,7 @@
           if (!b.grazed && d2 < grazeR * grazeR && d2 > hitR * hitR) {
             b.grazed = true;
             this.grazes++;
-            player.addNova(2.0);
+            player.addNova(0.5);
             this.score += Math.round(3 * mult);
             if (this.grazes % 3 === 0) {
               SF.Audio.sfx('graze');
@@ -900,7 +900,7 @@
       const mult = this.multiplier();
       const points = Math.round(e.score * mult);
       this.score += points;
-      if (this.player) this.player.addNova(e.elite ? 10 : 4);
+      if (this.player) this.player.addNova(e.elite ? 7 : 2.5);
 
       const now = performance.now();
       if (now - this.lastExplodeSound > 65) {
@@ -980,7 +980,7 @@
       switch (p.type) {
         case 'gem':
           this.score += 25 * mult;
-          player.addNova(1.0);
+          player.addNova(0.5);
           if (Math.random() < 0.35) {
             this.fx.spark(p.x, p.y, P.gold, 3, 70, 0.25);
             SF.Audio.sfx('pickup');
@@ -1114,7 +1114,7 @@
       this.lives = Math.max(0, this.lives - 1);
       this.combo = 0;
       this.comboTimer = 0;
-      player.downgradeActive();
+      const lostDrone = player.applyHitPenalty();
       player.grantInvuln(2.8);
       player.x = SF.W / 2;
       player.y = SF.H - 120;
@@ -1141,7 +1141,8 @@
       } else {
         this.fx.ring(player.x, player.y, P.teal, 8, 0.42, 64, 0.55);
         if (this.uiReady) {
-          this.ui.announce('HULL BREACH', '武器降级 · 短暂无敌', { alert: true, duration: 1400 });
+          const sub = lostDrone ? '武器降级 · 僚机失联' : '武器降级 · 蓄能受损';
+          this.ui.announce('HULL BREACH', sub, { alert: true, duration: 1500 });
         }
       }
     }

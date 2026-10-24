@@ -42,6 +42,7 @@
       this.split = opts.split || 0;
       this.wave = opts.wave || 0;
       this.burstKind = opts.burstKind || 'shard';
+      this.tint = opts.tint || null;
       this.mineArmed = false;
       this.trailT = 0;
     }
@@ -156,8 +157,9 @@
           const col = this.friendly
             ? (this.kind === 'lance' ? P.teal : this.kind === 'beam' ? P.rose : P.gold)
             : (this.kind === 'wave' ? P.violet : this.kind === 'plasma' ? P.violet : P.white);
+          const own = this.tint || col;
           SF.Game.fx.ember(
-            this.x, this.y, col,
+            this.x, this.y, own,
             this.kind === 'plasma' ? 3 : 1.4,
             this.kind === 'plasma' ? 0.34 : 0.17,
             -this.vx * 0.012, -this.vy * 0.012
@@ -306,6 +308,33 @@
   }
   SF.FloatText = FloatText;
 
+  /* ---------------- Weapon lines ---------------- */
+  // The classic speed/power triangle: the fast generalist bites the least, the
+  // slow piercing lance bites the hardest, seekers sit in the middle. Each line
+  // also carries the hull tint and the wingmen's ammo form, so swapping weapons
+  // changes how the whole flight looks and behaves.
+  const WEAPON_LINES = {
+    pulse: {
+      id: 'pulse', label: '脉冲', tint: P.teal, deep: P.tealDeep,
+      speed: 1250, drain: 7.4, recover: 15.5, droneAmmo: 'drone',
+    },
+    prism: {
+      id: 'prism', label: '棱镜', tint: P.rose, deep: P.roseDeep,
+      speed: 560, drain: 10.5, recover: 12, droneAmmo: 'beam',
+    },
+    swarm: {
+      id: 'swarm', label: '蜂群', tint: P.gold, deep: P.goldDeep,
+      speed: 830, drain: 8.6, recover: 13.5, droneAmmo: 'micro',
+    },
+  };
+  SF.WEAPON_LINES = WEAPON_LINES;
+  // Charge is spent while a line fires and refills while it rests. Running a
+  // line dry detunes it (weaker and slower) until it is swapped out, so holding
+  // one weapon forever is never the right play. Resonance rewards rotation.
+  const RESONANCE_MAX = 5;
+  const RESONANCE_WINDOW = 7;
+  const DETUNE_RECOVER = 34;
+
   /* ---------------- Player ---------------- */
   class Player {
     constructor() {
@@ -315,11 +344,9 @@
       this.alive = true;
       this.level = 2;
       this.activeWeapon = 'pulse';
-      this.weapons = {
-        pulse: { level: 2, unlocked: true },
-        prism: { level: 1, unlocked: false },
-        swarm: { level: 1, unlocked: false },
-      };
+      this.weapons = this.freshWeapons();
+      this.resonance = 0;
+      this.resT = 0;
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
@@ -343,17 +370,23 @@
       this.trailTimer = 0;
     }
 
+    freshWeapons() {
+      return {
+        pulse: { level: 2, unlocked: true, charge: 100, detuned: false },
+        prism: { level: 1, unlocked: false, charge: 100, detuned: false },
+        swarm: { level: 1, unlocked: false, charge: 100, detuned: false },
+      };
+    }
+
     reset() {
       this.x = SF.W / 2;
       this.y = SF.H - 130;
       this.alive = true;
       this.level = 2;
       this.activeWeapon = 'pulse';
-      this.weapons = {
-        pulse: { level: 2, unlocked: true },
-        prism: { level: 1, unlocked: false },
-        swarm: { level: 1, unlocked: false },
-      };
+      this.weapons = this.freshWeapons();
+      this.resonance = 0;
+      this.resT = 0;
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
@@ -373,13 +406,62 @@
 
     grantInvuln(s) { this.invuln = Math.max(this.invuln, s); }
 
+    line() { return WEAPON_LINES[this.activeWeapon] || WEAPON_LINES.pulse; }
+
     addNova(v) {
       if (this.overdrive > 0) return;
-      this.nova = clamp(this.nova + v, 0, 100);
+      // A detuned hull feeds the star core far less: sloppy mono-weapons play
+      // should not bank nova charges as fast as clean rotation.
+      const mul = this.weapons[this.activeWeapon].detuned ? 0.45 : 1 + this.resonance * 0.06;
+      this.nova = clamp(this.nova + v * mul, 0, 100);
     }
 
     unlockedWeapons() {
       return Object.keys(this.weapons).filter((k) => this.weapons[k].unlocked);
+    }
+
+    // Charge economy: every shot spends charge, holstered lines refill. Running
+    // a line dry detunes it until it is swapped out and rested, so holding one
+    // weapon forever is never the right play. Resonance rewards the rotation.
+    updateWeapons(dt) {
+      for (const key of Object.keys(this.weapons)) {
+        const w = this.weapons[key];
+        if (!w.unlocked) continue;
+        if (key !== this.activeWeapon) {
+          const line = WEAPON_LINES[key];
+          w.charge = clamp(w.charge + line.recover * dt, 0, 100);
+        }
+        if (w.charge >= DETUNE_RECOVER) w.detuned = false;
+      }
+      if (this.resT > 0) {
+        this.resT -= dt;
+        if (this.resT <= 0) {
+          this.resonance = Math.max(0, this.resonance - 1);
+          if (this.resonance) this.resT = RESONANCE_WINDOW;
+        }
+      }
+    }
+
+    spendCharge() {
+      const w = this.weapons[this.activeWeapon];
+      // With a single unlocked line there is nowhere to rotate, so it drains
+      // slower — the mechanic bites once the arsenal actually exists.
+      const solo = this.unlockedWeapons().length < 2 ? 0.55 : 1;
+      const line = WEAPON_LINES[this.activeWeapon];
+      w.charge = clamp(w.charge - line.drain * this.fireRate() * solo, 0, 100);
+      if (w.charge <= 0.5) w.detuned = true;
+    }
+
+    damageMul() {
+      const w = this.weapons[this.activeWeapon];
+      const res = 1 + this.resonance * 0.08;
+      const detune = w.detuned ? 0.55 : 1;
+      const od = this.overdrive > 0 ? 1.8 : 1;
+      return res * detune * od;
+    }
+
+    calibrate(base) {
+      return Math.max(1, Math.round(base * this.damageMul()));
     }
 
     addPower() {
@@ -403,7 +485,20 @@
       this.activeWeapon = name;
       this.level = target.level;
       this.fireTimer = Math.min(this.fireTimer, 0.07);
+      // Rotating onto a healthy line stacks resonance; rotating onto a dry one
+      // buys nothing, so the swap has to be timed.
+      if (target.charge >= 55 && !target.detuned) {
+        this.resonance = Math.min(RESONANCE_MAX, this.resonance + 1);
+        this.resT = RESONANCE_WINDOW;
+      } else {
+        this.resonance = 0;
+        this.resT = 0;
+      }
       SF.Audio.sfx('ui');
+      const g = SF.Game;
+      if (g && g.fx) {
+        g.fx.ring(this.x, this.y, WEAPON_LINES[name].tint, 14, 0.32, 62, 0.8);
+      }
       return true;
     }
 
@@ -425,6 +520,29 @@
       if (name === this.activeWeapon) this.level = target.level;
       else this.selectWeapon(name);
       return first ? 'unlocked' : 'upgraded';
+    }
+
+    // Taking a hit costs more than a level: the active line loses charge, the
+    // resonance chain breaks, and a wingman is blown off the wing.
+    applyHitPenalty() {
+      const w = this.weapons[this.activeWeapon];
+      w.charge = Math.max(0, w.charge - 45);
+      if (w.charge <= 0.5) w.detuned = true;
+      this.resonance = 0;
+      this.resT = 0;
+      this.downgradeActive();
+      return this.destroyDrone();
+    }
+
+    destroyDrone() {
+      if (!this.drones.length) return null;
+      const d = this.drones.pop();
+      SF.Game.fx.explosion(d.x, d.y, 0.85, this.line().tint);
+      SF.Game.fx.ring(d.x, d.y, this.line().tint, 8, 0.42, 74, 0.85);
+      SF.Game.fx.spark(d.x, d.y, P.white, 10, 190, 0.3);
+      SF.Game.fx.text(d.x, d.y - 26, '僚机失联', P.rose, 12, { life: 0.9 });
+      SF.Audio.sfx('hit');
+      return d.kind;
     }
 
     addDrone(kind) {
@@ -557,8 +675,10 @@
         this.fireTimer = Math.min(this.fireTimer, 0.02);
       }
 
+      // Keep the hull clear of the bottom instrument strip so the HUD never
+      // covers the ship or a bullet that could hit it.
       this.x = clamp(this.x, 31, SF.W - 31);
-      this.y = clamp(this.y, SF.H * 0.18, SF.H - 44);
+      this.y = clamp(this.y, SF.H * 0.18, SF.H - 104);
 
       const movedDX = this.x - px;
       const movedDY = this.y - py;
@@ -575,11 +695,11 @@
         }
       }
 
-      // engine trail
+      // engine trail — tinted by the active weapon line
       this.trailTimer -= dt;
       if (this.trailTimer <= 0 && this.alive) {
         this.trailTimer = 0.045;
-        const col = this.overdrive > 0 ? P.gold : P.teal;
+        const col = this.overdrive > 0 ? P.gold : this.line().tint;
         SF.Game.fx.ember(this.x + SF.rand(-9, 9), this.y + 30, col, SF.rand(1, 2.4), SF.rand(0.2, 0.4), SF.rand(10, 40), SF.rand(-40, -10));
       }
 
@@ -597,8 +717,10 @@
         this.shoot();
         this.fireTimer = this.fireRate();
       }
+      this.updateWeapons(dt);
 
       // escort drones hold fixed wing slots and trail with a short spring
+      const line = this.line();
       for (let i = 0; i < this.drones.length; i++) {
         const d = this.drones[i];
         const slot = this.droneSlot(i, this.drones.length);
@@ -610,29 +732,8 @@
         d.pdT = Math.max(0, d.pdT - dt);
         d.fireT -= dt;
         if (d.fireT > 0) continue;
-
-        if (d.kind === 'gunner') {
-          d.fireT = 0.52;
-          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 7, 0, -730, {
-            friendly: true, kind: 'drone', r: 4, dmg: 1, life: 2,
-          }));
-        } else if (d.kind === 'lance') {
-          d.fireT = 0.88;
-          const lean = clamp((d.x - this.x) / 55, -0.16, 0.16);
-          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 9, lean * 230, -980, {
-            friendly: true, kind: 'beam', r: 5, dmg: 2, life: 2, pierce: 1,
-          }));
-        } else if (d.kind === 'swarm') {
-          d.fireT = 1.05;
-          SF.Game.playerBullets.push(new Bullet(d.x, d.y - 5, (d.x - this.x) * 1.8, -520, {
-            friendly: true, kind: 'micro', r: 4, dmg: 1, life: 2.1,
-            homing: 1.5, turn: 4.6, lockDelay: 0.12,
-          }));
-        } else if (d.kind === 'aegis') {
-          d.fireT = 0.7;
-          SF.Game.fx.ring(d.x, d.y, P.violet, 3, 0.28, 32, 0.5);
-        }
-        if (d.kind !== 'aegis') SF.Game.fx.spark(d.x, d.y - 8, d.kind === 'lance' ? P.rose : d.kind === 'swarm' ? P.gold : P.teal, 2, 44, 0.16);
+        this.droneFire(d);
+        if (d.kind !== 'aegis') SF.Game.fx.spark(d.x, d.y - 8, line.tint, 2, 44, 0.16);
       }
 
       // overdrive ready pulse
@@ -641,21 +742,70 @@
       }
     }
 
+    // Wingmen re-load for whatever the hull is running: pulse gives them rate,
+    // prism gives them weight, swarm gives them seekers. The drone's own kind
+    // then decides volume and targeting, so a lance is still a lance.
+    droneFire(d) {
+      const g = SF.Game;
+      const line = this.line();
+      const lean = clamp((d.x - this.x) / 55, -0.18, 0.18);
+      const dmg = (base) => Math.max(1, Math.round(base * this.damageMul()));
+
+      if (d.kind === 'aegis') {
+        d.fireT = 0.7;
+        g.fx.ring(d.x, d.y, line.tint, 3, 0.28, 32, 0.5);
+        return;
+      }
+      if (this.activeWeapon === 'swarm' || d.kind === 'swarm') {
+        d.fireT = d.kind === 'gunner' ? 0.86 : 1.02;
+        const n = d.kind === 'lance' ? 2 : 1;
+        for (let k = 0; k < n; k++) {
+          g.playerBullets.push(new Bullet(d.x, d.y - 5, lean * 520 + (k - (n - 1) / 2) * 140, -700, {
+            friendly: true, kind: 'micro', r: 4, dmg: dmg(2), life: 2.1, tint: line.tint,
+            homing: 1.6, turn: 4.4, lockDelay: 0.12,
+          }));
+        }
+        return;
+      }
+      if (this.activeWeapon === 'prism') {
+        d.fireT = d.kind === 'lance' ? 0.82 : 1.05;
+        g.playerBullets.push(new Bullet(d.x, d.y - 9, lean * 150, -600, {
+          friendly: true, kind: 'beam', r: 6, dmg: dmg(d.kind === 'lance' ? 4 : 3), tint: line.tint,
+          life: 2.4, pierce: d.kind === 'lance' ? 2 : 1,
+        }));
+        return;
+      }
+      d.fireT = d.kind === 'gunner' ? 0.34 : 0.5;
+      g.playerBullets.push(new Bullet(d.x, d.y - 7, lean * 260, -1180, {
+        friendly: true, kind: 'drone', r: 4, dmg: dmg(1), life: 1.9, tint: line.tint,
+      }));
+      if (d.kind === 'lance') {
+        g.playerBullets.push(new Bullet(d.x - 5, d.y - 4, lean * 320 - 60, -1140, {
+          friendly: true, kind: 'drone', r: 4, dmg: dmg(1), life: 1.9, tint: line.tint,
+        }));
+      }
+    }
+
     fireRate() {
       const lv = clamp(this.level, 1, 5);
+      const w = this.weapons[this.activeWeapon];
       const od = this.overdrive > 0 ? 0.74 : 1;
+      // A dry line does not just hit softer, it also cycles slower.
+      const detune = w && w.detuned ? 1.45 : 1;
       const table = {
         pulse: [0.120, 0.108, 0.098, 0.090, 0.082],
-        prism: [0.280, 0.250, 0.225, 0.205, 0.190],
+        prism: [0.380, 0.350, 0.320, 0.300, 0.270],
         swarm: [0.250, 0.210, 0.180, 0.160, 0.145],
       };
-      return (table[this.activeWeapon] || table.pulse)[lv - 1] * od;
+      return (table[this.activeWeapon] || table.pulse)[lv - 1] * od * detune;
     }
 
     shoot() {
       const lv = clamp(this.level, 1, 5);
-      const od = this.overdrive > 0;
       const mode = this.activeWeapon;
+      const line = this.line();
+      const sp = line.speed;
+      const dmg = (base) => this.calibrate(base);
       const bx = this.x, by = this.y - 26;
       const fire = (x, y, vx, vy, opts) => {
         opts = opts || {};
@@ -670,84 +820,85 @@
           turn: opts.turn || 2.4,
           lockDelay: opts.lockDelay || 0,
           scale: opts.scale || 1,
+          tint: opts.tint || line.tint,
         }));
       };
 
       if (mode === 'prism') {
-        // Slow, heavy piercing lances. The boss killer: highest single-target
-        // damage, but sparse, so it never cleans a wide swarm for free.
-        const dmg = (od ? 1 : 0) + [3, 3, 4, 4, 5][lv - 1];
+        // Slowest and heaviest. Piercing lances carry the best single-target bite
+        // in the game, but the travel time punishes sloppy positioning and the
+        // volley is too sparse to carpet a wide swarm.
+        const b = [4, 4, 5, 6, 6][lv - 1];
         const pierce = [1, 1, 2, 2, 3][lv - 1];
-        fire(bx, by - 4, 0, -1180, { kind: 'lance', r: 8, dmg, pierce, life: 2 });
+        fire(bx, by - 4, 0, -sp, { kind: 'lance', r: 8, dmg: dmg(b), pierce, life: 3 });
         if (lv >= 2) {
-          fire(bx - 10, by + 2, 0, -1130, { kind: 'lance', r: 6, dmg: Math.max(2, dmg - 1), pierce, life: 2 });
-          fire(bx + 10, by + 2, 0, -1130, { kind: 'lance', r: 6, dmg: Math.max(2, dmg - 1), pierce, life: 2 });
+          fire(bx - 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3 });
+          fire(bx + 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3 });
         }
         if (lv >= 4) {
-          fire(bx - 20, by + 6, -95, -1080, { kind: 'lance', r: 5, dmg: Math.max(2, dmg - 2), pierce: 1, life: 2 });
-          fire(bx + 20, by + 6, 95, -1080, { kind: 'lance', r: 5, dmg: Math.max(2, dmg - 2), pierce: 1, life: 2 });
+          fire(bx - 20, by + 6, -95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3 });
+          fire(bx + 20, by + 6, 95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3 });
         }
       } else if (mode === 'swarm') {
-        // Fire-and-forget micro missiles. They only acquire visible targets,
-        // so they cannot clear a wave before it is legally on screen. Best
-        // coverage in the game, weakest bite on an armoured hull.
-        const count = [2, 3, 4, 5, 5][lv - 1];
-        const dmg = od ? 2 : (lv >= 4 ? 2 : 1);
+        // Mid speed, mid damage, and they never miss: micro seekers that only
+        // acquire legally visible targets, so they cannot clear a wave early.
+        const count = [2, 3, 4, 4, 4][lv - 1];
+        const base = [2, 2, 2, 3, 3][lv - 1];
         for (let i = 0; i < count; i++) {
           const off = (i - (count - 1) / 2);
-          fire(bx + off * 6, by + 6, off * 85, -560, {
-            kind: 'micro', r: 4, dmg, homing: 1.45, turn: 4.6,
+          fire(bx + off * 6, by + 6, off * 120, -sp, {
+            kind: 'micro', r: 4, dmg: dmg(base), homing: 1.45, turn: 4.6,
             lockDelay: 0.11, life: 2.2,
           });
         }
       } else {
-        // Balanced rapid pulse. Its patterns gain coverage and a heavy core.
-        const pd = [1, 1, 2, 2, 2][lv - 1];
-        const dmg = od ? pd + 1 : pd;
-        const speed = -880;
+        // Fastest and lightest. Always lands, covers the screen, never overkills
+        // an armoured hull — the safe answer that stays useful all run.
+        const v = -sp;
         if (lv === 1) {
-          fire(bx, by, 0, speed, { dmg });
+          fire(bx, by, 0, v, { dmg: dmg(1) });
         } else if (lv === 2) {
-          fire(bx - 7, by, 0, speed, { dmg });
-          fire(bx + 7, by, 0, speed, { dmg });
+          fire(bx - 7, by, 0, v, { dmg: dmg(1) });
+          fire(bx + 7, by, 0, v, { dmg: dmg(1) });
         } else if (lv === 3) {
-          fire(bx, by - 4, 0, speed, { dmg: dmg + 1 });
-          fire(bx - 9, by + 4, -40, speed, { dmg });
-          fire(bx + 9, by + 4, 40, speed, { dmg });
+          fire(bx, by - 4, 0, v, { dmg: dmg(1) });
+          fire(bx - 9, by + 4, -45, v, { dmg: dmg(1) });
+          fire(bx + 9, by + 4, 45, v, { dmg: dmg(1) });
         } else if (lv === 4) {
-          fire(bx - 6, by - 2, 0, speed, { dmg: dmg + 1 });
-          fire(bx + 6, by - 2, 0, speed, { dmg: dmg + 1 });
-          fire(bx - 15, by + 5, -80, speed, { dmg });
-          fire(bx + 15, by + 5, 80, speed, { dmg });
+          fire(bx - 6, by - 2, 0, v, { dmg: dmg(1) });
+          fire(bx + 6, by - 2, 0, v, { dmg: dmg(1) });
+          fire(bx - 15, by + 5, -85, v, { dmg: dmg(1) });
+          fire(bx + 15, by + 5, 85, v, { dmg: dmg(1) });
         } else {
-          fire(bx, by - 6, 0, speed, { kind: 'bolt', r: 6, dmg: dmg + 2 });
-          fire(bx - 8, by + 2, 0, speed, { dmg });
-          fire(bx + 8, by + 2, 0, speed, { dmg });
-          fire(bx - 17, by + 7, -105, speed, { dmg });
-          fire(bx + 17, by + 7, 105, speed, { dmg });
+          fire(bx, by - 6, 0, v, { kind: 'bolt', r: 6, dmg: dmg(2) });
+          fire(bx - 8, by + 2, 0, v, { dmg: dmg(1) });
+          fire(bx + 8, by + 2, 0, v, { dmg: dmg(1) });
+          fire(bx - 17, by + 7, -105, v, { dmg: dmg(1) });
+          fire(bx + 17, by + 7, 105, v, { dmg: dmg(1) });
         }
-        if (od) {
-          fire(bx - 24, by + 10, -160, speed * 0.94, { dmg });
-          fire(bx + 24, by + 10, 160, speed * 0.94, { dmg });
+        if (this.overdrive > 0) {
+          fire(bx - 24, by + 10, -160, v * 0.94, { dmg: dmg(1) });
+          fire(bx + 24, by + 10, 160, v * 0.94, { dmg: dmg(1) });
         }
       }
 
       this.muzzle = 0.06;
-      const mc = mode === 'prism' ? P.rose : mode === 'swarm' ? P.gold : od ? P.gold : P.teal;
-      SF.Game.fx.spark(bx, by, mc, od ? 3 : 2, 40, 0.14);
+      this.spendCharge();
+      SF.Game.fx.spark(bx, by, this.overdrive > 0 ? P.gold : line.tint, this.overdrive > 0 ? 3 : 2, 40, 0.14);
       SF.Audio.sfx('shoot');
     }
 
     draw(ctx) {
       if (!this.alive) return;
+      const line = this.line();
       if (this.invuln > 0 && Math.floor(this.invuln * 18) % 2 === 0) {
         // still draw a ghost to keep feedback
-        SF.Art.drawShip(ctx, this.x, this.y, { scale: 1, bank: this.bank, t: this.t, thrust: 0.5, alpha: 0.45 });
+        SF.Art.drawShip(ctx, this.x, this.y, { scale: 1, bank: this.bank, t: this.t, thrust: 0.5, alpha: 0.45, tint: line.tint, deep: line.deep });
       } else {
         // afterimages
         for (const a of this.after) {
           const al = a.life / 0.3;
-          SF.Art.drawShip(ctx, a.x, a.y, { scale: 1, bank: a.bank, t: this.t, thrust: 0, alpha: al * 0.22 });
+          SF.Art.drawShip(ctx, a.x, a.y, { scale: 1, bank: a.bank, t: this.t, thrust: 0, alpha: al * 0.22, tint: line.tint, deep: line.deep });
         }
         if (this.overdrive > 0) {
           ctx.save();
@@ -765,11 +916,11 @@
           ctx.restore();
           ctx.restore();
         }
-        SF.Art.drawShip(ctx, this.x, this.y, { scale: 1, bank: this.bank, t: this.t, thrust: 1 });
+        SF.Art.drawShip(ctx, this.x, this.y, { scale: 1, bank: this.bank, t: this.t, thrust: 1, tint: line.tint, deep: line.deep });
         if (this.muzzle > 0) {
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
-          SF.Art.drawGlow(ctx, this.x, this.y - 30, 16, P.gold, 0.6);
+          SF.Art.drawGlow(ctx, this.x, this.y - 30, 16, this.overdrive > 0 ? P.gold : line.tint, 0.6);
           ctx.restore();
         }
 
@@ -843,7 +994,7 @@
             ctx.stroke();
             ctx.restore();
           }
-          SF.Art.drawDrone(ctx, d.x, d.y, this.t, d.angle, d.kind);
+          SF.Art.drawDrone(ctx, d.x, d.y, this.t, d.angle, d.kind, line.tint);
         }
 
         // hitbox core
@@ -1411,7 +1562,7 @@
   const BOSS_TYPES = [
     {
       id: 'gatekeeper', name: '阿刻戎', title: '守门人', en: 'GATEKEEPER',
-      size: 76, hp: 320, color: P.rose, glow: P.rose,
+      size: 76, hp: 400, color: P.rose, glow: P.rose,
       phases: [
         ['fan', 'wallGap', 'twinBeam', 'mineCurtain'],
         ['spiral', 'wallGap', 'pulsar', 'fan', 'twinBeam'],

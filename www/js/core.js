@@ -27,6 +27,16 @@
     },
     easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); },
     easeInQuad(t) { return t * t; },
+    // '#rrggbb' -> 'rgba(r,g,b,a)' so a single palette entry can tint strokes,
+    // gradients and glows without hand-writing colour strings.
+    hexA(hex, a) {
+      const h = String(hex).replace('#', '');
+      const n = h.length === 3
+        ? [h[0] + h[0], h[1] + h[1], h[2] + h[2]]
+        : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
+      const r = parseInt(n[0], 16), g = parseInt(n[1], 16), b = parseInt(n[2], 16);
+      return `rgba(${r},${g},${b},${a === undefined ? 1 : a})`;
+    },
   });
 
   SF.vibrate = function (pattern) {

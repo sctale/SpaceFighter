@@ -419,6 +419,10 @@
     const t = opts.t || 0;
     const thrust = opts.thrust === undefined ? 1 : opts.thrust;
     const alpha = opts.alpha === undefined ? 1 : opts.alpha;
+    // The hull is painted by the weapon line currently online, so swapping
+    // weapons reads instantly even in the middle of a bullet storm.
+    const tint = opts.tint || P.teal;
+    const deep = opts.deep || P.tealDeep;
 
     ctx.save();
     ctx.translate(x, y);
@@ -428,7 +432,7 @@
     // aura
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    Art.drawGlow(ctx, 0, 4, 46, P.teal, 0.16 + 0.04 * Math.sin(t * 3));
+    Art.drawGlow(ctx, 0, 4, 46, tint, 0.16 + 0.04 * Math.sin(t * 3));
     ctx.restore();
 
     ctx.rotate(bank * 0.1);
@@ -442,9 +446,9 @@
       for (const ex of [-8.5, 8.5]) {
         const fg = ctx.createLinearGradient(ex, 16, ex, 40 * flick);
         fg.addColorStop(0, 'rgba(255,255,255,.9)');
-        fg.addColorStop(0.25, 'rgba(105,245,220,.8)');
-        fg.addColorStop(0.6, 'rgba(90,140,255,.35)');
-        fg.addColorStop(1, 'rgba(90,140,255,0)');
+        fg.addColorStop(0.25, SF.hexA(tint, 0.8));
+        fg.addColorStop(0.6, SF.hexA(deep, 0.35));
+        fg.addColorStop(1, SF.hexA(deep, 0));
         ctx.fillStyle = fg;
         ctx.beginPath();
         ctx.moveTo(ex - 3.2, 15);
@@ -458,7 +462,7 @@
 
     // wings (dark plates)
     ctx.fillStyle = '#16223f';
-    ctx.strokeStyle = 'rgba(105,245,220,.55)';
+    ctx.strokeStyle = SF.hexA(tint, 0.55);
     ctx.lineWidth = 1.1;
     ctx.beginPath();
     ctx.moveTo(0, -24);
@@ -491,9 +495,9 @@
 
     // central hull
     const hull = ctx.createLinearGradient(0, -26, 0, 20);
-    hull.addColorStop(0, '#e8fffb');
-    hull.addColorStop(0.3, '#8fe9e0');
-    hull.addColorStop(0.75, '#2b6d78');
+    hull.addColorStop(0, '#f3f8ff');
+    hull.addColorStop(0.3, SF.hexA(tint, 0.78));
+    hull.addColorStop(0.75, SF.hexA(deep, 0.92));
     hull.addColorStop(1, '#122638');
     ctx.fillStyle = hull;
     ctx.beginPath();
@@ -519,8 +523,8 @@
     // cockpit
     const ck = ctx.createLinearGradient(0, -12, 0, 1);
     ck.addColorStop(0, '#ffffff');
-    ck.addColorStop(0.4, '#b7f6ff');
-    ck.addColorStop(1, '#5c7cff');
+    ck.addColorStop(0.4, SF.hexA(tint, 0.65));
+    ck.addColorStop(1, SF.hexA(deep, 0.9));
     ctx.fillStyle = ck;
     ctx.beginPath();
     ctx.ellipse(0, -7, 3.4, 7.4, 0, 0, Math.PI * 2);
@@ -538,9 +542,11 @@
     ctx.restore();
   };
 
-  Art.drawDrone = function (ctx, x, y, t, angle, kind) {
+  Art.drawDrone = function (ctx, x, y, t, angle, kind, tint) {
     kind = kind || 'gunner';
-    const col = kind === 'lance' ? P.rose : kind === 'aegis' ? P.violet : kind === 'swarm' ? P.gold : P.teal;
+    // The wingmen paint themselves in the hull's current line colour, so the
+    // whole formation reads as one system when the weapon changes.
+    const col = tint || (kind === 'lance' ? P.rose : kind === 'aegis' ? P.violet : kind === 'swarm' ? P.gold : P.teal);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle || 0);
