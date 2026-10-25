@@ -522,6 +522,91 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   console.log('RISK ' + JSON.stringify(risk));
   fail('boss punishes a hull that never dodges', risk.hitsWhileStationary >= 4, risk);
 
+  /* ---------- 9. precise mode, graze economy, clear bonus, result card ---------- */
+  const precise = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    delete p.shoot;                       // earlier rigs stubbed it out
+    p.x = SF.W * 0.5; p.y = SF.H * 0.8;
+    p.weapons.pulse.unlocked = true; p.selectWeapon('pulse');
+    p.level = 5; p.weapons.pulse.level = 5;
+    p.weapons.pulse.charge = 100; p.weapons.pulse.detuned = false;
+    p.overdrive = 0; p.resonance = 0; p.invuln = 9999;
+    const spread = () => {
+      g.playerBullets.length = 0;
+      p.shoot();
+      return Math.round(Math.max(...g.playerBullets.map((b) => Math.abs(b.x - p.x))));
+    };
+    p.focus = false;
+    const wide = spread();
+    p.focus = true;
+    const tight = spread();
+    p.focus = false;
+    g.playerBullets.length = 0;
+    return { wide, tight };
+  });
+  fail('precise mode tightens the pattern', precise.tight > 0 && precise.tight < precise.wide * 0.6, precise);
+
+  const graze = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    p.x = SF.W * 0.5; p.y = SF.H * 0.6;
+    p.invuln = 0; p.dashT = 0;
+    g.grazes = 0; g.score = 0;
+    g.enemyBullets.length = 0;
+    g.enemyBullets.push(new SF.Bullet(p.x + 16, p.y, 0, 0, { kind: 'orb', r: 5, life: 4 }));
+    const before = g.grazes;
+    g.collide();
+    if (g.uiReady) g.ui.update(g);
+    return {
+      gained: g.grazes - before,
+      hud: document.getElementById('hudGraze').textContent,
+      score: g.score,
+    };
+  });
+  fail('grazing counts on the HUD and pays score', graze.gained === 1 && graze.hud === '1' && graze.score >= 4, graze);
+
+  const clear = await page.evaluate(() => {
+    const g = __SF.game;
+    g.sector = 2; g.score = 0;
+    g.sectorHits = 0; g.sectorGrazes = 40;
+    g.sectorStartTime = g.runTime - 30;
+    g.pickups.length = 0;
+    g.onBossDefeated({ x: SF.W * 0.5, y: SF.H * 0.3, def: { color: '#fff' } });
+    const el = document.getElementById('announce');
+    return {
+      gained: g.score,
+      title: document.getElementById('announceTitle').textContent,
+      sub: document.getElementById('announceSub').textContent,
+      bottom: el.classList.contains('is-bottom'),
+    };
+  });
+  fail('sector clear pays time/clean/graze bonuses in a bottom banner',
+    clear.gained > 9000 && clear.title === 'SECTOR CLEAR' && clear.sub.includes('无伤')
+    && clear.sub.includes('擦弹') && clear.bottom, clear);
+
+  const result = await page.evaluate(() => {
+    const g = __SF.game;
+    g.grazes = 123; g.novasFired = 2; g.hitsTaken = 1;
+    g.player.weapons.prism.unlocked = true;
+    g.player.drones.length = 0;
+    g.player.addDrone('lance');
+    g.gameOver();
+    const q = (id) => document.getElementById(id);
+    return {
+      graze: q('finalGraze').textContent,
+      novas: q('finalNovas').textContent,
+      hits: q('finalHits').textContent,
+      mult: q('finalMult').textContent,
+      rank: document.querySelector('#resultRank b').textContent,
+      rule: q('rankRule').textContent,
+      build: q('resultBuild').textContent,
+      overflow: document.documentElement.scrollHeight > innerHeight + 1,
+    };
+  });
+  fail('result card shows graze/nova/hits/rank/build',
+    result.graze === '123' && result.novas === '2' && result.hits === '1' && result.mult.startsWith('×')
+    && ['S', 'A', 'B', 'C'].includes(result.rank) && result.rule.length > 4
+    && result.build.includes('脉冲') && result.build.includes('僚机') && !result.overflow, result);
+
   console.log('\nERRORS', errors.length, errors.slice(0, 6).join('\n---\n'));
   await browser.close();
   if (errors.length) process.exit(1);
