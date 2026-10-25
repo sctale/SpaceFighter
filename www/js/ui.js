@@ -19,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -31,7 +31,7 @@
       const $ = (id) => document.getElementById(id);
       this.el = {
         stage: $('stage'),
-        score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), sector: $('hudSector'), sectorName: $('hudSectorName'),
+        score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), graze: $('hudGraze'), sector: $('hudSector'), sectorName: $('hudSectorName'),
         lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'),
         weaponRing: $('weaponRing'), resonanceBadge: $('resonanceBadge'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
@@ -43,11 +43,13 @@
         menuBest: $('menuBest'), menuSector: $('menuSector'),
         screenMenu: $('screenMenu'), screenPause: $('screenPause'), screenOver: $('screenOver'),
         finalScore: $('finalScore'), finalSector: $('finalSector'), finalKills: $('finalKills'),
+        finalGraze: $('finalGraze'), finalNovas: $('finalNovas'), finalHits: $('finalHits'), finalMult: $('finalMult'),
+        rankRule: $('rankRule'), resultBuild: $('resultBuild'),
         finalChain: $('finalChain'), finalTime: $('finalTime'), newRecord: $('newRecord'), overSub: $('overSub'),
         resultRank: $('resultRank'),
         btnPause: $('btnPause'), btnStart: $('btnStart'), btnRetry: $('btnRetry'), btnMenu: $('btnMenu'),
         btnResume: $('btnResume'), btnRestart: $('btnRestart'), btnQuit: $('btnQuit'),
-        btnDash: $('btnDash'), btnNova: $('btnNova'),
+        btnDash: $('btnDash'), btnNova: $('btnNova'), btnFocus: $('btnFocus'),
         buildSummary: $('buildSummary'),
         toggleSound: $('toggleSound'), toggleShake: $('toggleShake'), toggleFx: $('toggleFx'), toggleHaptic: $('toggleHaptic'),
         hud: $('hud'),
@@ -82,6 +84,13 @@
       click(this.el.btnQuit, () => g.toMenu());
       click(this.el.btnDash, () => g.tryDash());
       click(this.el.btnNova, () => g.tryNova());
+      // hold-to-focus ring mirrors SHIFT on the keyboard
+      if (this.el.btnFocus) {
+        const fbtn = this.el.btnFocus;
+        const setFocus = (on) => { g.input.touchFocus = on; fbtn.classList.toggle('is-held', on); };
+        fbtn.addEventListener('pointerdown', (e) => { e.preventDefault(); setFocus(true); });
+        for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) fbtn.addEventListener(ev, () => setFocus(false));
+      }
       click(this.el.weaponChip, () => {
         if (g.player && g.player.cycleWeapon()) this.toast('武器切换 · ' + (WEAPON_MODE_NAMES[g.player.activeWeapon] || ''));
       });
@@ -186,7 +195,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -203,6 +212,10 @@
       if (score !== this.cache.score) {
         el.score.textContent = this.fmt(score);
         this.cache.score = score;
+      }
+      if (game.grazes !== this.cache.graze) {
+        el.graze.textContent = game.grazes;
+        this.cache.graze = game.grazes;
       }
       const best = Math.max(this.bestValue, score);
       if (best !== this.cache.best) {
@@ -358,6 +371,7 @@
       el.announceTitle.textContent = title;
       el.announceSub.textContent = sub || '';
       el.announce.classList.toggle('is-alert', !!opts.alert);
+      el.announce.classList.toggle('is-bottom', !!opts.bottom);
       el.announce.classList.add('is-show');
       el.hint.classList.remove('is-show');
       if (this.announceTimer) clearTimeout(this.announceTimer);
@@ -412,17 +426,44 @@
     }
 
     showResult(data) {
-      this.el.finalScore.textContent = this.fmt(data.score);
-      this.el.finalSector.textContent = SF.pad2(data.sector);
-      this.el.finalKills.textContent = this.fmt(data.kills);
-      this.el.finalChain.textContent = data.maxCombo;
-      this.el.finalTime.textContent = SF.fmtTime(data.time);
-      this.el.newRecord.hidden = !data.newRecord;
+      const el = this.el;
+      el.finalScore.textContent = this.fmt(data.score);
+      el.finalSector.textContent = SF.pad2(data.sector);
+      el.finalKills.textContent = this.fmt(data.kills);
+      el.finalChain.textContent = data.maxCombo;
+      el.finalTime.textContent = SF.fmtTime(data.time);
+      if (el.finalGraze) el.finalGraze.textContent = this.fmt(data.grazes || 0);
+      if (el.finalNovas) el.finalNovas.textContent = data.novas || 0;
+      if (el.finalHits) el.finalHits.textContent = data.hits || 0;
+      if (el.finalMult) el.finalMult.textContent = '×' + (data.maxMult || 1);
+      el.newRecord.hidden = !data.newRecord;
       const rank = data.score >= 120000 || data.sector >= 8 ? 'S'
         : data.score >= 60000 || data.sector >= 5 ? 'A'
         : data.score >= 22000 || data.sector >= 3 ? 'B' : 'C';
-      this.el.resultRank.textContent = rank;
-      this.el.resultRank.className = 'result-rank rank-' + rank.toLowerCase();
+      const letter = el.resultRank.querySelector('b');
+      if (letter) letter.textContent = rank;
+      else el.resultRank.textContent = rank;
+      el.resultRank.className = 'result-rank rank-' + rank.toLowerCase();
+      if (el.rankRule) {
+        const next = rank === 'S' ? null
+          : rank === 'A' ? Math.max(0, 120000 - data.score)
+          : rank === 'B' ? Math.max(0, 60000 - data.score)
+          : Math.max(0, 22000 - data.score);
+        el.rankRule.textContent = rank === 'S'
+          ? 'S 级巡航 · 已达最高评价'
+          : '距离上一档还差 ' + this.fmt(next) + ' 分';
+      }
+      if (el.resultBuild) {
+        if (data.build && data.build.weapons) {
+          const wn = { pulse: '脉冲', prism: '棱镜', swarm: '蜂群' };
+          const dn = { gunner: '脉冲僚机', lance: '棱镜僚机', aegis: '守护僚机', swarm: '蜂群僚机' };
+          const chips = data.build.weapons.map((w) => '<span>' + (wn[w.k] || w.k) + ' <b>LV.' + w.lv + '</b></span>');
+          (data.build.drones || []).forEach((d) => chips.push('<span>' + (dn[d] || d) + '</span>'));
+          el.resultBuild.innerHTML = chips.length ? '<em>本次装配</em>' + chips.join('') : '';
+        } else {
+          el.resultBuild.textContent = '';
+        }
+      }
       const flavors = [
         '信号消失在裂隙深处。',
         '深空收回了你的航迹。',

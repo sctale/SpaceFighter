@@ -79,6 +79,7 @@
       this.pointer = { x: SF.W / 2, y: SF.H * 0.8, down: false, type: 'mouse', inside: false, id: null };
       this.pressed = { dash: false, nova: false, pause: false, mute: false, start: false, restart: false, weapon: false, weapon1: false, weapon2: false, weapon3: false };
       this.hasTouch = false;
+      this.touchFocus = false;
       this.dragStart = null;
       this.attach();
     }
@@ -181,7 +182,12 @@
       return { x, y, active: x !== 0 || y !== 0 };
     }
 
-    focusHeld() { return this.keys.has('shift') || this.keys.has('control'); }
+    // Precise mode: hold SHIFT/CTRL on desktop, hold the on-screen 精准 ring on
+    // touch. Slow movement plus a tightened shot is the standard bullet-hell
+    // answer to "I need to thread this gap".
+    focusHeld() {
+      return this.touchFocus === true || this.keys.has('shift') || this.keys.has('control');
+    }
 
     consume(action) {
       if (!this.pressed[action]) return false;

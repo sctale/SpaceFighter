@@ -49,6 +49,11 @@
       this.lives = 3;
       this.kills = 0;
       this.grazes = 0;
+      this.novasFired = 0;
+      this.hitsTaken = 0;
+      this.sectorHits = 0;
+      this.sectorGrazes = 0;
+      this.sectorStartTime = 0;
       this.combo = 0;
       this.comboTimer = 0;
       this.comboMax = 2.8;
@@ -244,7 +249,7 @@
         this.ui.updateMenuStats();
         const info = SF.sectorInfo(1);
         this.ui.update(this);
-        this.ui.announce('SECTOR 01', info.name + ' // ' + info.en, { duration: 2500 });
+        this.ui.announce('SECTOR 01', info.name + ' // ' + info.en, { duration: 2200, bottom: true });
       }
       this.runCount++;
       const touchUI = document.body.classList.contains('is-touch');
@@ -255,6 +260,7 @@
         { t: 22.5, html: touchUI ? '危险时点 <b>冲刺</b> · 短暂无敌穿越弹幕' : '<b>SPACE</b> 冲刺穿越弹幕 · 短暂无敌', duration: 3800 },
         { t: 31, html: '拾取 <b>棱镜 / 蜂群</b> 解锁武器线 · 各自升到 <b>LV.5</b>', duration: 4600 },
         { t: 40, html: touchUI ? '武器线会 <b>耗尽蓄能</b> · 打空就换线回充，切换攒 <b>共鸣</b>' : '武器线会 <b>耗尽蓄能</b> · 按 <b>Q</b> 换线回充，切换攒 <b>共鸣</b>', duration: 5200 },
+        { t: 50, html: touchUI ? '按住 <b>精准</b> 键慢速移动 · 弹道收束、判定点显形' : '按住 <b>SHIFT</b> 精准移动 · 弹道收束、判定点显形', duration: 4200 },
       ];
       this.render();
     }
@@ -273,6 +279,11 @@
       this.lives = 3;
       this.kills = 0;
       this.grazes = 0;
+      this.novasFired = 0;
+      this.hitsTaken = 0;
+      this.sectorHits = 0;
+      this.sectorGrazes = 0;
+      this.sectorStartTime = 0;
       this.combo = 0;
       this.comboTimer = 0;
       this.maxCombo = 0;
@@ -295,6 +306,7 @@
     pause() {
       if (this.state !== 'playing') return;
       this.state = 'paused';
+      if (this.input) this.input.touchFocus = false;
       SF.Audio.setPaused(true);
       this.input.clearPressed();
       if (this.uiReady) {
@@ -371,6 +383,14 @@
           kills: this.kills,
           maxCombo: this.maxCombo,
           time: this.runTime * 1000,
+          grazes: this.grazes,
+          novas: this.novasFired,
+          hits: this.hitsTaken,
+          maxMult: this.multiplier(),
+          build: this.player ? {
+            weapons: this.player.unlockedWeapons().map((k) => ({ k, lv: this.player.weapons[k].level })),
+            drones: this.player.drones.map((d) => d.kind),
+          } : null,
           newRecord,
         });
         this.ui.showScreen('over');
@@ -807,8 +827,10 @@
           if (!b.grazed && d2 < grazeR * grazeR && d2 > hitR * hitR) {
             b.grazed = true;
             this.grazes++;
-            player.addNova(0.5);
-            this.score += Math.round(3 * mult);
+            this.sectorGrazes++;
+            player.addNova(0.9);
+            this.score += Math.round(4 * mult);
+            if (this.grazes % 10 === 0) this.fx.text(player.x, player.y - 42, 'GRAZE ×' + this.grazes, P.teal, 11, { life: 0.8 });
             if (this.grazes % 3 === 0) {
               SF.Audio.sfx('graze');
               this.fx.spark(b.x, b.y, P.teal, 2, 60, 0.2);
@@ -1115,6 +1137,8 @@
       const oldY = player.y;
 
       this.lives = Math.max(0, this.lives - 1);
+      this.hitsTaken++;
+      this.sectorHits++;
       this.combo = 0;
       this.comboTimer = 0;
       // Pain feeds the star core: a hull hit is worth roughly 200 boss hits of
@@ -1254,7 +1278,14 @@
     }
 
     onBossDefeated(boss) {
-      const bonus = 4000 + this.sector * 900;
+      // Clear rewards: speed, a clean run and grazing pay out separately, so
+      // the clear card can show a breakdown instead of one opaque number.
+      const clearT = Math.max(0, this.runTime - this.sectorStartTime);
+      const timeBonus = Math.max(0, Math.round((90 - clearT) * 40));
+      const cleanBonus = this.sectorHits === 0 ? 1200 + this.sector * 200 : 0;
+      const grazeBonus = this.sectorGrazes * 20;
+      const clearBonus = timeBonus + cleanBonus + grazeBonus;
+      const bonus = 4000 + this.sector * 900 + clearBonus;
       this.score += bonus;
       this.kills++;
       const bx = boss.x, by = boss.y;
@@ -1292,14 +1323,20 @@
       }
       this.saveProgress();
       if (this.uiReady) {
+        const parts = ['时间 +' + timeBonus];
+        if (cleanBonus) parts.push('无伤 +' + cleanBonus);
+        parts.push('擦弹 +' + grazeBonus);
         this.ui.bossWarn();
-        this.ui.announce('SECTOR CLEAR', '星区肃清 // SALVAGE DEPLOYED', { duration: 3000 });
+        this.ui.announce('SECTOR CLEAR', parts.join(' · '), { duration: 3200, bottom: true });
         this.ui.hint('整备阶段 · 拾取强化，准备跃迁', 3600);
       }
     }
 
     advanceSector() {
       this.sector++;
+      this.sectorStartTime = this.runTime;
+      this.sectorHits = 0;
+      this.sectorGrazes = 0;
       this.player.grantInvuln(1.5);
       this.player.x = SF.W / 2;
       this.player.y = SF.H - 130;
@@ -1308,13 +1345,14 @@
       this.saveProgress();
       if (this.uiReady) {
         const info = SF.sectorInfo(this.sector);
-        this.ui.announce('SECTOR ' + SF.pad2(this.sector), info.name + ' // ' + info.en, { duration: 2400 });
+        this.ui.announce('SECTOR ' + SF.pad2(this.sector), info.name + ' // ' + info.en, { duration: 2200, bottom: true });
         this.ui.update(this);
       }
     }
 
     novaBlast() {
       const player = this.player;
+      this.novasFired++;
       if (!player) return;
       SF.Audio.sfx('nova');
       this.fx.nova(player.x, player.y);

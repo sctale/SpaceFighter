@@ -351,6 +351,7 @@
       this.reflectT = 0;
       this.drones = [];
       this.fireTimer = 0;
+      this.focus = false;
       this.invuln = 1.6;
       this.bank = 0;
       this.t = 0;
@@ -391,6 +392,7 @@
       this.reflectT = 0;
       this.drones = [];
       this.fireTimer = 0;
+      this.focus = false;
       this.invuln = 1.8;
       this.nova = 0;
       this.overdrive = 0;
@@ -638,6 +640,7 @@
 
       const mv = input.moveVector();
       const focus = input.focusHeld();
+      this.focus = focus;
       const speed = focus ? 185 : 440;
       let movedX = 0, movedY = 0;
       const px = this.x, py = this.y;
@@ -819,6 +822,8 @@
       const bx = this.x, by = this.y - 26;
       const fire = (x, y, vx, vy, opts) => {
         opts = opts || {};
+        // precise mode concentrates the pattern instead of widening it
+        if (this.focus) { x = bx + (x - bx) * 0.42; vx *= 0.2; }
         SF.Game.playerBullets.push(new Bullet(x, y, vx, vy, {
           friendly: true,
           kind: opts.kind || 'bolt',
@@ -1017,6 +1022,25 @@
         ctx.arc(this.x, this.y + 2, 2.2, 0, TAU);
         ctx.fill();
         ctx.restore();
+
+        // precise-mode reticle: the true hitbox plus a slow dashed ring
+        if (this.focus) {
+          ctx.save();
+          ctx.translate(this.x, this.y + 2);
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = 'rgba(243,248,255,.72)';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(0, 0, 12, 0, TAU);
+          ctx.stroke();
+          ctx.strokeStyle = SF.hexA(line.tint, 0.55);
+          ctx.setLineDash([4, 6]);
+          ctx.lineDashOffset = -this.t * 26;
+          ctx.beginPath();
+          ctx.arc(0, 0, 17, 0, TAU);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
       if (this.hitFlash > 0) {

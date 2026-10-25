@@ -149,6 +149,12 @@
       grad.addColorStop(1, 'rgba(255,111,145,0)');
       g.fillStyle = grad;
       g.fillRect(-14, -14, 28, 28);
+      // dark rim keeps the orb readable over bright nebulae
+      g.strokeStyle = 'rgba(22,6,15,.55)';
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(0, 0, 8.6, 0, Math.PI * 2);
+      g.stroke();
       g.fillStyle = 'rgba(255,255,255,.95)';
       g.beginPath();
       g.arc(0, 0, 2.6, 0, Math.PI * 2);
