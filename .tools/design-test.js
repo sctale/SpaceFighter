@@ -607,6 +607,72 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     && ['S', 'A', 'B', 'C'].includes(result.rank) && result.rule.length > 4
     && result.build.includes('脉冲') && result.build.includes('僚机') && !result.overflow, result);
 
+  /* ---------- 10. boss tell, music mood/phase, difficulty tiers ---------- */
+  const tell = await page.evaluate(() => {
+    const g = __SF.game;
+    g.boss = null; g.lasers.length = 0; g.enemyBullets.length = 0;
+    g.sector = 1; g.settings.difficulty = 'standard'; g.diff = SF.DIFFICULTY.standard;
+    g.bossWarnTimer = 0;
+    g.spawnBoss();
+    const b = g.boss;
+    b.entering = false; b.y = b.targetY;
+    b.maxHp = b.hp = 1e9;
+    b.attack = null;
+    b.startAttack('fan');
+    const atStart = { t: +b.attack.t.toFixed(2), label: b.attackLabel, bullets: g.enemyBullets.length, tellColor: b.tellColor };
+    const dt = 1 / 60;
+    for (let i = 0; i < 20; i++) b.update(dt);          // ~0.33s into the charge
+    const mid = { bullets: g.enemyBullets.length, label: b.attackLabel };
+    for (let i = 0; i < 30; i++) b.update(dt);          // past the tell
+    const after = { bullets: g.enemyBullets.length, label: b.attackLabel, telegraphing: b.telegraphing };
+    return { atStart, mid, after };
+  });
+  fail('boss charges visibly before every spell',
+    tell.atStart.t < 0 && tell.atStart.label.startsWith('预告') && tell.mid.bullets === 0
+    && tell.after.bullets > 0 && tell.after.label === '扇形齐射' && tell.after.telegraphing === false, tell);
+
+  const audio = await page.evaluate(() => {
+    const g = __SF.game;
+    const before = { mood: SF.Audio.mood, intensity: SF.Audio.intensity };
+    g.onBossPhase({ phase: 3 });
+    const boss3 = { intensity: SF.Audio.intensity, mood: SF.Audio.mood };
+    g.onBossDesperation({ x: 0, y: 0, size: 40, def: { color: '#fff' }, phase: 3 });
+    const desperate = SF.Audio.intensity;
+    g.advanceSector();
+    const waves = { mood: SF.Audio.mood, intensity: SF.Audio.intensity };
+    return { before, boss3, desperate, waves };
+  });
+  fail('music follows boss phase and sector',
+    audio.boss3.intensity === 3 && audio.boss3.mood === 'boss' && audio.desperate === 3 && audio.waves.mood === 'waves', audio);
+
+  const diff = await page.evaluate(() => {
+    const g = __SF.game;
+    const probe = () => {
+      g.enemies.length = 0;
+      const e = g.spawnEnemy('drifter', SF.W * 0.5, SF.H * 0.3, { sector: 1 });
+      const boss = new SF.Boss(1);
+      return {
+        rate: +e.fireTimer === 99 ? null : 0,
+        hp: boss.maxHp,
+        spd: Math.round(boss.bulletSpeed()),
+        scoreMul: g.diff.scoreMul,
+        nova: g.diff.nova,
+      };
+    };
+    g.settings.difficulty = 'cruise'; g.setSetting('difficulty', 'cruise');
+    const cruise = probe();
+    g.setSetting('difficulty', 'abyss');
+    const abyss = probe();
+    g.setSetting('difficulty', 'standard');
+    const standard = probe();
+    return { cruise, abyss, standard };
+  });
+  fail('difficulty scales hulls, boss speed and score',
+    diff.abyss.hp > diff.standard.hp && diff.cruise.hp < diff.standard.hp
+    && diff.abyss.spd > diff.standard.spd && diff.cruise.spd < diff.standard.spd
+    && diff.abyss.scoreMul > 1 && diff.cruise.scoreMul < 1
+    && diff.abyss.nova < 1 && diff.cruise.nova > 1, diff);
+
   console.log('\nERRORS', errors.length, errors.slice(0, 6).join('\n---\n'));
   await browser.close();
   if (errors.length) process.exit(1);
