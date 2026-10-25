@@ -26,7 +26,8 @@
       this.director = null;
 
       this.state = 'menu';
-      this.settings = Object.assign({ sound: true, shake: true, lowFx: false, haptic: true }, SF.Storage.get('settings', {}));
+      this.settings = Object.assign({ sound: true, shake: true, lowFx: false, haptic: true, difficulty: 'standard' }, SF.Storage.get('settings', {}));
+      this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
       this.viewScale = 1;
       this.lastTime = 0;
       this.runTime = 0;
@@ -200,6 +201,7 @@
       this.settings[key] = value;
       SF.Storage.set('settings', this.settings);
       if (key === 'sound') SF.Audio.setMuted(!value);
+      if (key === 'difficulty') this.diff = SF.DIFFICULTY[value] || SF.DIFFICULTY.standard;
       if (this.uiReady) this.ui.applySettings();
     }
 
@@ -300,6 +302,7 @@
       this.godMode = false;
       this.pickupMsgCount = 0;
       this.pickupMsgTimer = 0;
+      this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
       this.director.startSector(1);
     }
 
@@ -921,7 +924,7 @@
       this.comboTimer = this.comboMax;
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
       const mult = this.multiplier();
-      const points = Math.round(e.score * mult);
+      const points = Math.round(e.score * mult * this.diff.scoreMul);
       this.score += points;
       if (this.player) this.player.addNova(e.elite ? 7 : 2.5);
 
@@ -1201,6 +1204,7 @@
       if (this.boss || this.bossWarnTimer > 0) return;
       this.bossWarnTimer = delay || 3.0;
       SF.Audio.setIntensity(2);
+      SF.Audio.setMood('boss');
       SF.Audio.sfx('warn');
       if (this.uiReady) {
         this.ui.announce('WARNING', '巨构信号接近 // MASSIVE SIGNAL', { alert: true, duration: Math.max(1600, (delay || 3) * 900) });
@@ -1237,6 +1241,7 @@
     }
 
     onBossPhase(boss) {
+      SF.Audio.setIntensity(boss.phase >= 3 ? 3 : 2);
       // Mercy window: the board is wiped so a phase change reads as a breath,
       // not as an unfair wall of leftover bullets.
       this.clearEnemyBullets(true);
@@ -1252,6 +1257,7 @@
     }
 
     onBossDesperation(boss) {
+      SF.Audio.setIntensity(3);
       this.fx.shake(16);
       this.fx.flash('255,210,120', 0.3);
       this.hitstop(0.08);
@@ -1286,7 +1292,7 @@
       const cleanBonus = this.sectorHits === 0 ? 1200 + this.sector * 200 : 0;
       const grazeBonus = this.sectorGrazes * 20;
       const clearBonus = timeBonus + cleanBonus + grazeBonus;
-      const bonus = 4000 + this.sector * 900 + clearBonus;
+      const bonus = Math.round((4000 + this.sector * 900 + clearBonus) * this.diff.scoreMul);
       this.score += bonus;
       this.kills++;
       const bx = boss.x, by = boss.y;
@@ -1338,6 +1344,7 @@
       this.sectorStartTime = this.runTime;
       this.sectorHits = 0;
       this.sectorGrazes = 0;
+      SF.Audio.setMood('waves');
       this.player.grantInvuln(1.5);
       this.player.x = SF.W / 2;
       this.player.y = SF.H - 130;

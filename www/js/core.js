@@ -201,6 +201,15 @@
   }
   SF.Input = Input;
 
+  /* ---------------- Difficulty ---------------- */
+  // The same game, three readings: cruise softens density and pays nova faster,
+  // abyss tightens intervals, speeds bullets, thickens boss hulls and pays more.
+  SF.DIFFICULTY = {
+    cruise: { id: 'cruise', name: '巡航', note: '弹幕放缓 · 星爆更勤 · 得分 ×0.8', enemyRate: 1.22, bulletSpeed: 0.9, bossBullet: 0.86, bossHp: 0.9, nova: 1.2, scoreMul: 0.8 },
+    standard: { id: 'standard', name: '标准', note: '设计基准 · 原汁原味', enemyRate: 1, bulletSpeed: 1, bossBullet: 1, bossHp: 1, nova: 1, scoreMul: 1 },
+    abyss: { id: 'abyss', name: '深渊', note: '弹幕更快 · Boss 更硬 · 得分 ×1.35', enemyRate: 0.8, bulletSpeed: 1.1, bossBullet: 1.12, bossHp: 1.18, nova: 0.85, scoreMul: 1.35 },
+  };
+
   /* ---------------- Audio engine ---------------- */
   class AudioEngine {
     constructor() {
@@ -213,6 +222,7 @@
       this.muted = false;
       this.musicOn = false;
       this.intensity = 0;
+      this.mood = 'waves';
       this.timer = null;
       this.step = 0;
       this.nextStepTime = 0;
@@ -321,7 +331,12 @@
     }
 
     setIntensity(n) {
-      this.intensity = n;
+      this.intensity = Math.max(0, Math.min(3, n));
+    }
+
+    // waves | boss — boss swaps to a darker progression and a driving bass.
+    setMood(m) {
+      this.mood = m === 'boss' ? 'boss' : 'waves';
     }
 
     _schedule() {
@@ -348,22 +363,32 @@
       // Hats
       if (s % 2 === 0) this._hat(time, s % 4 === 2 ? 0.035 : 0.018, false);
       if (inten >= 1 && s % 4 === 3) this._hat(time, 0.012, false);
+      if (inten >= 3) this._hat(time, s % 2 ? 0.012 : 0.02, s % 4 === 0);
       if (inten >= 2 && s % 4 === 2) this._hat(time, 0.02, true);
 
-      const roots = [45, 41, 48, 43]; // A2, F2, C3, G2
+      const boss = this.mood === 'boss';
+      const roots = boss ? [40, 36, 43, 38] : [45, 41, 48, 43]; // boss: E2, C2, G2, D2
       const root = roots[bar];
-      const chords = [
-        [0, 3, 7, 10],
-        [0, 4, 7, 11],
-        [0, 4, 7, 11],
-        [0, 4, 7, 10],
-      ];
+      const chords = boss
+        ? [
+            [0, 3, 7, 10],
+            [0, 3, 7, 10],
+            [0, 3, 6, 10],
+            [0, 4, 7, 11],
+          ]
+        : [
+            [0, 3, 7, 10],
+            [0, 4, 7, 11],
+            [0, 4, 7, 11],
+            [0, 4, 7, 10],
+          ];
       const chord = chords[bar];
 
       // Bass
       if (s === 0 || s === 6 || s === 8) this._bass(this._midi(root - 12), time, this.stepDur * (s === 6 ? 1.6 : 2.7), 0.09);
       if (inten >= 1 && s === 11) this._bass(this._midi(root), time, this.stepDur * 1.4, 0.05);
       if (inten >= 2 && s === 14) this._bass(this._midi(root - 12), time, this.stepDur * 1.2, 0.06);
+      if (inten >= 3 && (s === 3 || s === 7 || s === 13)) this._bass(this._midi(root - 12 + (s === 7 ? 3 : 0)), time, this.stepDur * 1.1, 0.05);
 
       // Pad at bar start (two detuned voices)
       if (s === 0) {
@@ -375,7 +400,7 @@
 
       // Arpeggio
       const arpPattern = [0, 1, 2, 3, 2, 1, 3, 2, 1, 2, 3, 1, 0, 2, 1, 3];
-      if (inten >= 1 || s % 2 === 0) {
+      if (inten >= 3 || inten >= 1 || s % 2 === 0) {
         const idx = arpPattern[s];
         const oct = (s >= 8 ? 24 : 12);
         const n = this._midi(root + chord[idx] + oct);
@@ -383,7 +408,7 @@
       }
 
       // Lead shimmer (sparse, bar 3+)
-      if (inten >= 2 && (s === 3 || s === 10)) {
+      if (inten >= 2 && (s === 3 || s === 10 || (inten >= 3 && s === 6))) {
         const n = this._midi(root + chord[2] + 24);
         this._pluck(n, time, 0.014, true);
       }

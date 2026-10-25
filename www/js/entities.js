@@ -415,7 +415,8 @@
       // A detuned hull feeds the star core far less: sloppy mono-weapons play
       // should not bank nova charges as fast as clean rotation.
       const mul = this.weapons[this.activeWeapon].detuned ? 0.45 : 1 + this.resonance * 0.06;
-      this.nova = clamp(this.nova + v * mul, 0, 100);
+      const diffNova = SF.Game && SF.Game.diff ? SF.Game.diff.nova : 1;
+      this.nova = clamp(this.nova + v * mul * diffNova, 0, 100);
     }
 
     // Pain-charging ignores the line's state: getting hit always pays out in full.
@@ -1280,7 +1281,7 @@
           if (this.chargeT <= 0) {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
             this.chargeT = 0;
           }
         } else if (this.fireTimer <= 0) {
@@ -1290,7 +1291,7 @@
           } else {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
           }
         }
       }
@@ -1304,7 +1305,7 @@
       if (!SF.Game.player) return;
       const pl = SF.Game.player;
       const dif = 1 + this.tier * 0.14;
-      const sp = Math.min(300, 150 * dif);
+      const sp = Math.min(300, 150 * dif) * (SF.Game && SF.Game.diff ? SF.Game.diff.bulletSpeed : 1);
       const bx = this.x, by = this.y + this.size * 0.5;
       const aim = Math.atan2(pl.y - this.y, pl.x - this.x);
       const add = (ang, speed, kind, r, scale, extra) => {
@@ -1648,6 +1649,14 @@
     crossSweep: 2.9, cascade: 3.1, homingBarrage: 2.7, spiralDouble: 2.4,
     mineRing: 1.9, novaBurst: 2.6,
   };
+  // Pre-spell tell: every attack charges for a beat in a colour that names its
+  // threat family (bullets / beams / movement / ordnance).
+  const TELL_TIME = 0.5;
+  const ATTACK_TELL = {
+    sweep: P.rose, cross: P.rose, twinBeam: P.rose, laserWeb: P.rose, crossSweep: P.rose,
+    blink: P.violet, charge: P.violet,
+    summon: P.gold, mineCurtain: P.gold, mineRing: P.gold,
+  };
   // Attacks that take over the boss position for their whole duration.
   const MOVING_ATTACKS = { blink: true, charge: true };
   SF.ATTACK_DURATION = ATTACK_DURATION;
@@ -1664,7 +1673,7 @@
       this.sector = sector;
       this.tier = Math.min(3, Math.floor((sector - 1) / 5));
       this.size = def.size;
-      this.maxHp = Math.round(def.hp * (1 + (sector - 1) * 0.85));
+      this.maxHp = Math.round(def.hp * (1 + (sector - 1) * 0.85) * (SF.Game && SF.Game.diff ? SF.Game.diff.bossHp : 1));
       this.hp = this.maxHp;
       this.glowColor = def.color;
       this.x = SF.W / 2;
@@ -1689,6 +1698,8 @@
       this.lockMove = false;
       this.attackLabel = '';
       this.mercy = 0;
+      this.telegraphing = false;
+      this.tellColor = P.teal;
       this.idleCd = 0.8;
       this.dive = null;
       this.desperate = false;
@@ -1807,10 +1818,16 @@
     }
 
     startAttack(name) {
-      this.attack = { name, t: 0, fired: {}, emit: 0, angle: Math.random() * TAU, data: null };
-      this.attackLabel = ATTACK_LABELS[name] || '';
+      // Negative clock = charging. Every timed volley and emitter naturally waits
+      // for t >= 0, so the tell needs no special cases per pattern.
+      this.attack = { name, t: -TELL_TIME, fired: {}, emit: 0, angle: Math.random() * TAU, data: null };
+      this.tellColor = ATTACK_TELL[name] || P.teal;
+      this.attackLabel = '预告 · ' + (ATTACK_LABELS[name] || '');
       this.attackDuration = ATTACK_DURATION[name] || 1.2;
       this.lockMove = !!MOVING_ATTACKS[name];
+      this.telegraphing = true;
+      SF.Game.fx.ring(this.x, this.y, this.tellColor, this.size * 0.4, TELL_TIME, this.size * 2.6, 0.9);
+      SF.Game.fx.spark(this.x, this.y, this.tellColor, 6, 90, 0.3);
       SF.Audio.sfx('warn');
     }
 
@@ -1821,7 +1838,8 @@
 
     bulletSpeed() {
       const base = 152 + this.tier * 46;
-      return base * (this.phase === 3 ? 1.18 : this.phase === 2 ? 1.06 : 1);
+      const ph = this.phase === 3 ? 1.18 : this.phase === 2 ? 1.06 : 1;
+      return base * ph * (SF.Game && SF.Game.diff ? SF.Game.diff.bossBullet : 1);
     }
 
     shot(ang, speed, kind, opts) {
@@ -1893,6 +1911,19 @@
     updateAttack(dt) {
       const a = this.attack;
       a.t += dt;
+      if (a.t < 0) {
+        // charging: no bullets yet, just the tell
+        if (Math.random() < dt * 26) {
+          SF.Game.fx.ember(this.x + SF.rand(-this.size, this.size), this.y + SF.rand(-this.size * 0.6, this.size * 0.8),
+            this.tellColor, 1.6, 0.3, 0, -50);
+        }
+        return;
+      }
+      if (this.telegraphing) {
+        this.telegraphing = false;
+        this.attackLabel = ATTACK_LABELS[a.name] || '';
+        SF.Game.fx.ring(this.x, this.y, this.tellColor, this.size * 0.5, 0.3, this.size * 3.2, 0.85);
+      }
       const spd = this.bulletSpeed();
       const aim = this.aimAngle();
 
@@ -2297,6 +2328,26 @@
 
     draw(ctx) {
       SF.Art.drawBoss(ctx, this, this.t);
+      // charging tell: a tightening ring in the attack's threat colour
+      if (this.attack && this.attack.t < 0) {
+        const k = 1 + this.attack.t / TELL_TIME;      // 1 -> 0
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = SF.hexA(this.tellColor || P.teal, 0.28 + k * 0.5);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size * (0.6 + k * 1.5), 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([6, 10]);
+        ctx.lineDashOffset = -this.t * 40;
+        ctx.strokeStyle = SF.hexA(this.tellColor || P.teal, 0.4);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size * (0.5 + k * 1.1), 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
       if (this.entering) {
         ctx.save();
         ctx.strokeStyle = 'rgba(255,111,145,.25)';

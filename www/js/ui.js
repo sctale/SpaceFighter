@@ -51,6 +51,7 @@
         btnPause: $('btnPause'), btnStart: $('btnStart'), btnRetry: $('btnRetry'), btnMenu: $('btnMenu'),
         btnResume: $('btnResume'), btnRestart: $('btnRestart'), btnQuit: $('btnQuit'),
         btnDash: $('btnDash'), btnNova: $('btnNova'), btnFocus: $('btnFocus'),
+        diffPicker: $('diffPicker'), diffNote: $('diffNote'),
         buildSummary: $('buildSummary'),
         toggleSound: $('toggleSound'), toggleShake: $('toggleShake'), toggleFx: $('toggleFx'), toggleHaptic: $('toggleHaptic'),
         hud: $('hud'),
@@ -111,6 +112,17 @@
         g.setSetting('lowFx', next);
         this.toast(next ? '已切换轻柔特效' : '已切换标准特效');
       });
+      const picker = this.el.diffPicker;
+      if (picker) {
+        picker.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-diff]');
+          if (!btn) return;
+          SF.Audio.sfx('ui');
+          g.setSetting('difficulty', btn.dataset.diff);
+          this.applySettings();
+        });
+      }
+
       click(this.el.toggleHaptic, () => {
         const next = !g.settings.haptic;
         g.setSetting('haptic', next);
@@ -437,6 +449,15 @@
         this.el.toggleHaptic.setAttribute('aria-checked', s.haptic !== false ? 'true' : 'false');
       }
       document.body.classList.toggle('reduce-fx', !!s.lowFx);
+      const diff = SF.DIFFICULTY[s.difficulty] || SF.DIFFICULTY.standard;
+      if (this.el.diffPicker) {
+        this.el.diffPicker.querySelectorAll('button[data-diff]').forEach((b) => {
+          const on = b.dataset.diff === diff.id;
+          b.classList.toggle('is-on', on);
+          b.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+        if (this.el.diffNote) this.el.diffNote.textContent = diff.name + ' · ' + diff.note;
+      }
     }
 
     showResult(data) {
