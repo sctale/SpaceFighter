@@ -1204,6 +1204,7 @@
       SF.Audio.sfx('warn');
       if (this.uiReady) {
         this.ui.announce('WARNING', '巨构信号接近 // MASSIVE SIGNAL', { alert: true, duration: Math.max(1600, (delay || 3) * 900) });
+        this.ui.warnPulse(Math.max(1600, (delay || 3) * 900));
         this.ui.hideHint();
       }
       this.enemies.forEach((e) => {

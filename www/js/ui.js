@@ -31,6 +31,7 @@
       const $ = (id) => document.getElementById(id);
       this.el = {
         stage: $('stage'),
+        stageWarn: $('stageWarn'),
         score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), graze: $('hudGraze'), sector: $('hudSector'), sectorName: $('hudSectorName'),
         lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'),
         weaponRing: $('weaponRing'), resonanceBadge: $('resonanceBadge'),
@@ -232,6 +233,11 @@
         this.renderLives(game.lives);
         this.cache.lives = game.lives;
       }
+      const lowHull = game.lives === 1;
+      if (lowHull !== this.cache.lowHull) {
+        document.body.classList.toggle('is-low-hull', lowHull);
+        this.cache.lowHull = lowHull;
+      }
       if (p && (p.level !== this.cache.weapon || p.activeWeapon !== this.cache.weaponMode)) {
         const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
         el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
@@ -378,6 +384,14 @@
       this.announceTimer = setTimeout(() => {
         el.announce.classList.remove('is-show');
       }, opts.duration || 2400);
+    }
+
+    warnPulse(ms) {
+      const el = this.el.stageWarn;
+      if (!el) return;
+      el.classList.add('is-on');
+      if (this.warnTimer) clearTimeout(this.warnTimer);
+      this.warnTimer = setTimeout(() => el.classList.remove('is-on'), ms || 2600);
     }
 
     hideAnnounce() {
