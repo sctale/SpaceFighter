@@ -152,14 +152,13 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     p.resonance = 0; p.resT = 0; p.overdrive = 0;
     p.x = SF.W * 0.5; p.y = SF.H * 0.8;
     const dt = 1 / 60;
-    let t = 0, detunedAt = null;
+    let t = 0, detunedAt = null, detunedMul = 1;
     while (t < 30) {
       p.update(dt, g.input);
       for (let j = g.playerBullets.length - 1; j >= 0; j--) if (!g.playerBullets[j].update(dt, p)) g.playerBullets.splice(j, 1);
-      if (p.weapons.pulse.detuned && detunedAt === null) detunedAt = +t.toFixed(1);
+      if (p.weapons.pulse.detuned && detunedAt === null) { detunedAt = +t.toFixed(1); detunedMul = p.damageMul(); }
       t += dt;
     }
-    const detunedMul = p.damageMul();
     p.selectWeapon('prism');                        // rested line -> resonance
     const resonanceAfterSwap = p.resonance;
     const swapMul = p.damageMul();
@@ -260,6 +259,44 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   });
   fail('taking damage feeds the star core (hull > shield > 0)',
     hitNova.hullGain >= 20 && hitNova.shieldGain >= 5 && hitNova.shieldGain < hitNova.hullGain, hitNova);
+
+  const vent = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    delete p.shoot;
+    for (const k of ['pulse', 'prism', 'swarm']) { p.weapons[k].charge = 100; p.weapons[k].detuned = false; }
+    p.selectWeapon('pulse'); p.level = 5; p.weapons.pulse.level = 5;
+    p.overdrive = 0; p.resonance = 0;
+    p.weapons.pulse.charge = 0; p.weapons.pulse.detuned = true;
+    p.x = SF.W * 0.5; p.y = SF.H * 0.8;
+    const dt = 1 / 60;
+    let t = 0, rearmedAt = null;
+    while (t < 20) {
+      p.update(dt, g.input);
+      for (let j = g.playerBullets.length - 1; j >= 0; j--) if (!g.playerBullets[j].update(dt, p)) g.playerBullets.splice(j, 1);
+      if (!p.weapons.pulse.detuned && rearmedAt === null) rearmedAt = +t.toFixed(1);
+      t += dt;
+    }
+    return { rearmedAt, charge: Math.round(p.weapons.pulse.charge) };
+  });
+  fail('a dry line vents and re-arms without switching', vent.rearmedAt !== null && vent.rearmedAt > 1 && vent.rearmedAt < 8, vent);
+
+  const skies = await page.evaluate(() => {
+    const g = __SF.game;
+    const hashes = [];
+    for (let sec = 1; sec <= 10; sec++) {
+      const c = document.createElement('canvas');
+      c.width = SF.W; c.height = SF.H;
+      const cx = c.getContext('2d');
+      g.bg.t = 10;
+      g.bg.draw(cx, { mode: 'game', danger: 0, sector: sec });
+      const d = cx.getImageData(0, 0, SF.W, SF.H).data;
+      let h = 0;
+      for (let i = 0; i < d.length; i += 991) h = (h * 31 + d[i]) >>> 0;
+      hashes.push(h);
+    }
+    return { distinct: new Set(hashes).size };
+  });
+  fail('every sector paints a distinct sky', skies.distinct === 10, skies);
 
   const hud = await page.evaluate(() => {
     const btn = document.getElementById('btnNova');
