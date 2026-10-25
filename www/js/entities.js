@@ -436,9 +436,13 @@
       for (const key of Object.keys(this.weapons)) {
         const w = this.weapons[key];
         if (!w.unlocked) continue;
+        const line = WEAPON_LINES[key];
         if (key !== this.activeWeapon) {
-          const line = WEAPON_LINES[key];
           w.charge = clamp(w.charge + line.recover * dt, 0, 100);
+        } else if (w.detuned) {
+          // A dry line vents while stuck: firing cannot drain it further, so it
+          // always climbs back to the re-arm threshold and the gun comes back.
+          w.charge = clamp(w.charge + line.recover * 0.6 * dt, 0, 100);
         }
         if (w.charge >= DETUNE_RECOVER) w.detuned = false;
       }
@@ -453,6 +457,7 @@
 
     spendCharge() {
       const w = this.weapons[this.activeWeapon];
+      if (w.detuned) return;   // venting: do not keep it pinned at zero
       // With a single unlocked line there is nowhere to rotate, so it drains
       // slower — the mechanic bites once the arsenal actually exists.
       const solo = this.unlockedWeapons().length < 2 ? 0.55 : 1;

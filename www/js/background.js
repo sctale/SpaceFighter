@@ -7,6 +7,21 @@
   const P = SF.PALETTE;
   const TAU = SF.TAU;
 
+  // Every sector gets its own sky: tint + one signature feature. Positions are
+  // fixed per sector (not random) so a sky reads the same on every visit.
+  const SECTOR_LOOKS = [
+    { tint: '105,245,220', feature: 'planet', x: 0.79, y: 0.2, r: 0.3 },
+    { tint: '155,140,255', feature: 'rings', x: 0.24, y: 0.24, r: 0.2 },
+    { tint: '255,111,145', feature: 'curtain', x: 0.5, y: 0.28, r: 0.5 },
+    { tint: '255,210,122', feature: 'rift', x: 0.63, y: 0.38, r: 0.5 },
+    { tint: '105,180,255', feature: 'rocks', x: 0.5, y: 0.4, r: 0.5 },
+    { tint: '220,140,255', feature: 'sun', x: 0.26, y: 0.19, r: 0.22 },
+    { tint: '105,245,220', feature: 'moons', x: 0.5, y: 0.26, r: 0.42 },
+    { tint: '255,150,120', feature: 'comet', x: 0.62, y: 0.28, r: 0.5 },
+    { tint: '160,220,255', feature: 'veil', x: 0.5, y: 0.4, r: 0.6 },
+    { tint: '255,210,122', feature: 'core', x: 0.5, y: 0.88, r: 0.5 },
+  ];
+
   class Background {
     constructor() {
       this.t = 0;
@@ -410,19 +425,21 @@
 
       if (opts.mode === 'menu') this.drawMenuScene(ctx, t);
 
-      // sector-specific nebula wash
-      const sectorTints = [
-        '105,245,220', '155,140,255', '255,111,145', '255,210,122',
-        '105,180,255', '220,140,255', '105,245,220', '255,150,120',
-        '160,220,255', '255,210,122',
-      ];
-      const tc = sectorTints[((opts.sector || 1) - 1) % sectorTints.length];
-      const wash = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, H * 0.76);
-      wash.addColorStop(0, `rgba(${tc},0.018)`);
-      wash.addColorStop(0.45, `rgba(${tc},0.038)`);
-      wash.addColorStop(1, `rgba(${tc},0)`);
+      // sector-themed sky: tinted wash + signature feature
+      const look = SECTOR_LOOKS[((opts.sector || 1) - 1) % SECTOR_LOOKS.length];
+      const tc = look.tint;
+      const wash = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, H * 0.8);
+      wash.addColorStop(0, `rgba(${tc},0.03)`);
+      wash.addColorStop(0.45, `rgba(${tc},0.06)`);
+      wash.addColorStop(1, `rgba(${tc},0.015)`);
       ctx.fillStyle = wash;
       ctx.fillRect(0, 0, W, H);
+      const topBand = ctx.createLinearGradient(0, 0, 0, H * 0.5);
+      topBand.addColorStop(0, `rgba(${tc},0.06)`);
+      topBand.addColorStop(1, `rgba(${tc},0)`);
+      ctx.fillStyle = topBand;
+      ctx.fillRect(0, 0, W, H * 0.5);
+      if (play) this.drawSectorFeature(ctx, look, t);
 
       if (play) {
         const scrim = ctx.createRadialGradient(W / 2, H * 0.44, H * 0.08, W / 2, H * 0.44, H * 0.68);
@@ -439,6 +456,192 @@
       vg.addColorStop(1, 'rgba(0,0,0,.26)');
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, W, H);
+    }
+
+    // One signature backdrop per sector. Kept low-contrast so bullets stay king.
+    drawSectorFeature(ctx, look, t) {
+      const W = SF.W, H = SF.H;
+      const tint = look.tint;
+      const x = look.x * W, y = look.y * H;
+      const r = look.r * Math.min(W, H);
+      ctx.save();
+      if (look.feature === 'planet') {
+        const glow = ctx.createRadialGradient(x, y, r * 0.35, x, y, r * 1.3);
+        glow.addColorStop(0, 'rgba(' + tint + ',0.05)');
+        glow.addColorStop(0.72, 'rgba(' + tint + ',0.1)');
+        glow.addColorStop(1, 'rgba(' + tint + ',0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(x - r * 1.3, y - r * 1.3, r * 2.6, r * 2.6);
+        const body = ctx.createRadialGradient(x - r * 0.32, y - r * 0.36, r * 0.08, x, y, r);
+        body.addColorStop(0, 'rgba(' + tint + ',0.17)');
+        body.addColorStop(0.72, 'rgba(9,14,30,0.86)');
+        body.addColorStop(1, 'rgba(5,8,18,0.96)');
+        ctx.fillStyle = body;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.clip();
+        for (let i = -3; i <= 3; i++) {
+          ctx.fillStyle = 'rgba(' + tint + ',' + (0.026 + (i % 2 ? 0.014 : 0.034)) + ')';
+          ctx.beginPath();
+          ctx.ellipse(x, y + i * r * 0.17 + Math.sin(t * 0.2 + i) * 1.4, r * 0.99, r * 0.05, 0, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'rings') {
+        const glow = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.6);
+        glow.addColorStop(0, 'rgba(' + tint + ',0.08)');
+        glow.addColorStop(1, 'rgba(' + tint + ',0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(x - r * 1.6, y - r * 1.6, r * 3.2, r * 3.2);
+        ctx.strokeStyle = 'rgba(' + tint + ',0.16)';
+        for (let i = 0; i < 3; i++) {
+          ctx.lineWidth = 1.2 - i * 0.2;
+          ctx.beginPath();
+          ctx.ellipse(x, y, r * (1.25 + i * 0.34), r * (0.32 + i * 0.09), -0.42, 0, TAU);
+          ctx.stroke();
+        }
+        const body = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r * 0.62);
+        body.addColorStop(0, 'rgba(' + tint + ',0.22)');
+        body.addColorStop(1, 'rgba(8,12,26,0.95)');
+        ctx.fillStyle = body;
+        ctx.beginPath(); ctx.arc(x, y, r * 0.6, 0, TAU); ctx.fill();
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'curtain') {
+        for (let i = 0; i < 4; i++) {
+          const bx = x + (i - 1.5) * W * 0.16 + Math.sin(t * 0.35 + i) * 10;
+          const bw = W * 0.1;
+          const g = ctx.createLinearGradient(0, y - r, 0, y + r * 1.4);
+          g.addColorStop(0, 'rgba(' + tint + ',0)');
+          g.addColorStop(0.35, 'rgba(' + tint + ',' + (0.05 - i * 0.008) + ')');
+          g.addColorStop(0.75, 'rgba(' + tint + ',0.02)');
+          g.addColorStop(1, 'rgba(' + tint + ',0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(bx - bw / 2, y - r, bw, r * 2.4);
+        }
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'rift') {
+        ctx.strokeStyle = 'rgba(' + tint + ',0.06)';
+        ctx.lineWidth = 26;
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.9, y - r * 1.2);
+        ctx.lineTo(x - r * 0.3, y - r * 0.3);
+        ctx.lineTo(x + r * 0.15, y + r * 0.15);
+        ctx.lineTo(x + r * 0.45, y + r * 1.3);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(' + tint + ',0.24)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'rocks') {
+        // dark silhouettes: source-over, faint tinted rims
+        const spots = [[0.2, 0.18, 0.1], [0.84, 0.32, 0.075], [0.3, 0.62, 0.055], [0.7, 0.74, 0.085], [0.12, 0.42, 0.04]];
+        for (let i = 0; i < spots.length; i++) {
+          const [sx, sy, sr] = spots[i];
+          const cx = sx * W + Math.sin(t * 0.12 + i) * 8;
+          const cy = (sy + ((t * 0.004 + i * 0.13) % 0.2)) * H;
+          const rr = sr * W;
+          ctx.fillStyle = 'rgba(8,12,24,0.9)';
+          ctx.beginPath();
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * TAU;
+            const rad = rr * (0.72 + ((k * 37) % 10) / 34);
+            const px = cx + Math.cos(a) * rad, py = cy + Math.sin(a) * rad * 0.86;
+            if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(' + tint + ',0.12)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'sun') {
+        const glow = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 2.4);
+        glow.addColorStop(0, 'rgba(255,255,255,0.2)');
+        glow.addColorStop(0.18, 'rgba(' + tint + ',0.16)');
+        glow.addColorStop(1, 'rgba(' + tint + ',0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
+        ctx.strokeStyle = 'rgba(' + tint + ',0.12)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU + t * 0.03;
+          ctx.beginPath();
+          ctx.moveTo(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5);
+          ctx.lineTo(x + Math.cos(a) * r * (1.4 + (i % 3) * 0.22), y + Math.sin(a) * r * (1.4 + (i % 3) * 0.22));
+          ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255,245,225,0.5)';
+        ctx.beginPath(); ctx.arc(x, y, r * 0.3, 0, TAU); ctx.fill();
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'moons') {
+        for (let i = 0; i < 2; i++) {
+          const mx = W * (0.3 + i * 0.4) + Math.sin(t * 0.08 + i * 2) * 12;
+          const my = H * (0.22 + i * 0.05);
+          const mr = r * (0.34 - i * 0.1);
+          const g = ctx.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.1, mx, my, mr);
+          g.addColorStop(0, 'rgba(' + tint + ',0.2)');
+          g.addColorStop(1, 'rgba(10,15,30,0.9)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'comet') {
+        const travel = (t * 0.02) % 1;
+        const cx = x - W * 0.5 + travel * W * 1.1;
+        const cy = y - H * 0.22 + travel * H * 0.52;
+        const g = ctx.createLinearGradient(cx, cy, cx - 220, cy - 120);
+        g.addColorStop(0, 'rgba(255,255,255,0.22)');
+        g.addColorStop(0.3, 'rgba(' + tint + ',0.12)');
+        g.addColorStop(1, 'rgba(' + tint + ',0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - 220, cy - 120); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath(); ctx.arc(cx, cy, 2.2, 0, TAU); ctx.fill();
+        ctx.restore();
+        return;
+      }
+      if (look.feature === 'veil') {
+        for (let i = 0; i < 3; i++) {
+          ctx.save();
+          ctx.translate(W * 0.5, H * (0.3 + i * 0.14));
+          ctx.rotate(-0.5 + i * 0.06);
+          const g = ctx.createLinearGradient(-W * 0.6, 0, W * 0.6, 0);
+          g.addColorStop(0, 'rgba(' + tint + ',0)');
+          g.addColorStop(0.5, 'rgba(' + tint + ',' + (0.05 - i * 0.012) + ')');
+          g.addColorStop(1, 'rgba(' + tint + ',0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(-W * 0.6, -H * 0.03, W * 1.2, H * 0.06);
+          ctx.restore();
+        }
+        ctx.restore();
+        return;
+      }
+      // core: concentric arcs rising from the bottom
+      for (let i = 0; i < 4; i++) {
+        ctx.strokeStyle = 'rgba(' + tint + ',' + (0.09 - i * 0.02) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(x, y, r * (0.5 + i * 0.26) + Math.sin(t * 0.4 + i) * 4, Math.PI * 1.06, Math.PI * 1.94);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     drawMenuScene(ctx, t) {
