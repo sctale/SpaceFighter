@@ -309,7 +309,7 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   letter-spacing: .18em;
   color: var(--ink-dim);
 }
-.hud-graze b { color: var(--teal); font-weight: 500; }
+.hud-graze b { color: var(--teal); font-weight: 500; font-variant-numeric: tabular-nums; }
 
 .sector-box {
   display: flex;
@@ -462,12 +462,19 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   color: var(--rose);
   white-space: nowrap;
   flex: 0 0 auto;
+  /* The pill box exists from the start: going critical only changes its colour,
+     so the boss row cannot grow 6px and shove the health track downward. */
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  height: 13px;
+  line-height: 1;
 }
 .boss-phase.is-critical {
   color: var(--gold);
-  padding: 1px 6px;
-  border: 1px solid rgba(255, 210, 122, 0.45);
-  border-radius: 999px;
+  border-color: rgba(255, 210, 122, 0.45);
   animation: bossCriticalPulse 0.85s ease-in-out infinite;
 }
 @keyframes bossCriticalPulse {
@@ -541,7 +548,21 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   min-width: 0;
 }
 
-.lives { display: flex; align-items: center; gap: 4px; height: 11px; }
+/* Survival readout: two fixed rows (hull above, shield below) inside a slot that
+   never changes size or position. Losing a life, gaining a shield, or hitting an
+   extra life only toggles which marks are lit — the strip never reflows. */
+.dash-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  width: 76px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.lives { display: flex; align-items: center; gap: 4px; height: 9px; flex: 0 0 auto; }
 .life {
   display: block;
   width: 12px;
@@ -555,7 +576,15 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   background: rgba(141, 155, 189, 0.22);
   filter: none;
 }
-.life.is-new { animation: lifeIn .45s var(--ease-out) both; }
+/* Reserved-but-unrevealed slots keep the row width constant */
+.life.is-ghost {
+  background: rgba(141, 155, 189, 0.1);
+  filter: none;
+  opacity: 0;
+}
+/* "backwards", not "both": a filled-forwards animation would keep pinning the
+   slot to opacity 1 even after it goes back to being an unrevealed placeholder. */
+.life.is-new { animation: lifeIn .45s var(--ease-out) backwards; }
 @keyframes lifeIn { from { transform: scale(1.8); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Weapon pod: a small charge ring + name + level pips, no surrounding card */
@@ -602,9 +631,21 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   50% { opacity: .35; }
 }
 .weapon-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.weapon-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 82px; }
+.weapon-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  width: 44px;
+}
 .weapon-chip.is-low .weapon-copy > span { color: var(--gold); }
 .weapon-chip.is-detuned .weapon-copy > span { color: var(--rose); }
+/* One-shot flare when a vented line climbs back to full and re-arms */
+.weapon-chip.is-armed { animation: chipRearm .6s var(--ease-out); }
+@keyframes chipRearm {
+  0% { border-color: rgba(105, 245, 220, 0.85); background: rgba(105, 245, 220, 0.16); box-shadow: 0 0 18px rgba(105, 245, 220, 0.3); }
+  100% { border-color: transparent; background: transparent; box-shadow: none; }
+}
 
 .weapon-pips { display: flex; gap: 2px; flex: 0 0 auto; }
 .weapon-pips b {
@@ -618,32 +659,39 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
 .weapon-chip.is-swarm .weapon-pips b.is-on { background: var(--gold); box-shadow: 0 0 6px rgba(255, 210, 122, 0.6); }
 
 
-/* Resonance: a small gold badge counting the current chain of swaps */
+/* Resonance: a small gold badge counting the current chain of swaps. Its slot is
+   always reserved — the pill does not grow and shrink as the chain builds. */
 .res-badge {
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 7px;
   letter-spacing: .08em;
-  padding: 1px 4px;
+  width: 22px;
+  padding: 1px 0;
+  text-align: center;
   border: 1px solid rgba(105, 245, 220, 0.4);
   border-radius: 999px;
   background: rgba(105, 245, 220, 0.08);
   color: var(--teal);
   flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity .18s var(--ease-out);
 }
+.res-badge.is-on { opacity: 1; }
 .res-badge.is-hot {
   border-color: rgba(255, 210, 122, 0.55);
   background: rgba(255, 210, 122, 0.1);
   color: var(--gold);
 }
-.res-badge[hidden] { display: none; }
 
+/* Shield row: three hexes that only change between lit and dark. Never removed
+   from the layout, so the strip looks identical with 0 or 3 charges. */
 .shield-chip {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  height: 6px;
 }
-.shield-chip[hidden] { display: none; }
 .shield-pips { display: flex; gap: 3px; }
 .shield-pips b {
   width: 6px;
@@ -697,6 +745,10 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   font-size: 6px;
   letter-spacing: .1em;
   color: var(--ink-dim);
+  /* "0%" -> "100%" must not shove the label around inside the circle */
+  min-width: 3.4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .ring-btn:active { transform: scale(.92); }
 .ring-btn.is-cooling { opacity: .45; }
@@ -1116,8 +1168,11 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
   margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 7px;
+  line-height: 1.4;
   letter-spacing: .16em;
   color: var(--ink-dim);
+  /* The note re-wording when a tier is picked must not resize the settings card */
+  min-height: 1.4em;
 }
 .control-hints {
   margin-top: auto;

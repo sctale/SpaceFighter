@@ -19,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -208,7 +208,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -266,27 +266,40 @@
         const charge = Math.round(w.charge);
         if (charge !== this.cache.weaponCharge && el.weaponRing) {
           el.weaponRing.style.setProperty('--pct', charge);
+          // While a dry line vents, the label counts the climb so the recharge is
+          // something you watch happen rather than guess at.
+          if (this.cache.weaponDetuned) el.weaponName.textContent = '失谐 ' + charge + '%';
           this.cache.weaponCharge = charge;
         }
         if (w.detuned !== this.cache.weaponDetuned) {
           el.weaponChip.classList.toggle('is-detuned', w.detuned);
-          el.weaponChip.classList.toggle('is-low', !w.detuned && w.charge < 40);
-          if (w.detuned) el.weaponName.textContent = '失谐';
+          if (w.detuned) el.weaponName.textContent = '失谐 0%';
           else if (this.cache.weaponDetuned !== null) {
             const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
             el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
+            // A full vent is the only re-arm worth flashing for; swapping onto a
+            // half-charged line just changes the name.
+            if (w.charge >= 99.5) {
+              el.weaponChip.classList.remove('is-armed');
+              void el.weaponChip.offsetWidth;
+              el.weaponChip.classList.add('is-armed');
+            }
           }
           this.cache.weaponDetuned = w.detuned;
         }
+        const chargeLow = !w.detuned && w.charge < 40;
+        if (chargeLow !== this.cache.chargeLow) {
+          el.weaponChip.classList.toggle('is-low', chargeLow);
+          this.cache.chargeLow = chargeLow;
+        }
         if (p.resonance !== this.cache.resonance && el.resonanceBadge) {
-          el.resonanceBadge.hidden = p.resonance <= 0;
+          el.resonanceBadge.classList.toggle('is-on', p.resonance > 0);
           el.resonanceBadge.textContent = '共' + p.resonance;
           el.resonanceBadge.classList.toggle('is-hot', p.resonance >= 3);
           this.cache.resonance = p.resonance;
         }
         if (p.shieldCharges !== this.cache.shield) {
           this.cache.shield = p.shieldCharges;
-          el.shieldChip.hidden = p.shieldCharges <= 0;
           Array.from(el.shieldPips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.shieldCharges));
         }
         const novaRounded = Math.round(p.nova);
@@ -365,21 +378,30 @@
       }
     }
 
+    // The hull row is a fixed five-slot track (the run cap). Slots past the lives
+    // you have ever shown are invisible placeholders, so gaining an extra life or
+    // losing one only changes which marks are lit — never where they sit.
     renderLives(lives) {
-      const slots = Math.max(3, lives);
+      const MAX_LIVES = 5;
       const wrap = this.el.lives;
-      const prev = wrap.children.length;
-      if (prev !== slots) {
+      if (wrap.children.length !== MAX_LIVES) {
         wrap.innerHTML = '';
-        for (let i = 0; i < slots; i++) {
-          const s = document.createElement('span');
-          s.className = 'life';
-          if (i === slots - 1 && slots > prev) s.classList.add('is-new');
-          wrap.appendChild(s);
-        }
+        for (let i = 0; i < MAX_LIVES; i++) wrap.appendChild(Object.assign(document.createElement('span'), { className: 'life' }));
       }
+      const shown = Math.max(3, lives);
+      const grew = this.lifeShown === undefined ? false : shown > this.lifeShown;
+      this.lifeShown = shown;
       Array.from(wrap.children).forEach((el, i) => {
-        el.classList.toggle('is-empty', i >= lives);
+        el.classList.toggle('is-ghost', i >= shown);
+        el.classList.toggle('is-empty', i < shown && i >= lives);
+        const flash = grew && i === shown - 1;
+        if (flash) {
+          el.classList.remove('is-new');
+          void el.offsetWidth;
+        } else {
+          el.classList.remove('is-new');
+        }
+        if (flash) el.classList.add('is-new');
       });
     }
 
