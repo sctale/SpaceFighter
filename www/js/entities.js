@@ -329,11 +329,20 @@
   };
   SF.WEAPON_LINES = WEAPON_LINES;
   // Charge is spent while a line fires and refills while it rests. Running a
-  // line dry detunes it (weaker and slower) until it is swapped out, so holding
-  // one weapon forever is never the right play. Resonance rewards rotation.
+  // line dry detunes it (weaker and slower) until it has been recharged, so
+  // holding one weapon forever is never the right play. Resonance rewards rotation.
   const RESONANCE_MAX = 5;
   const RESONANCE_WINDOW = 7;
-  const DETUNE_RECOVER = 34;
+  // Re-arm rules, with hysteresis. Autofire never stops, so a line that runs dry
+  // while held has to vent on its own: it climbs back to the TOP (100) before the
+  // gun re-arms, so the ring makes one clean sweep instead of a 0→30 sawtooth that
+  // re-detunes the moment it fires. A rested (holstered) line is already off the
+  // trigger, so it comes back as soon as it holds a real charge.
+  const DETUNE_REARM = 100;
+  const DETUNE_CLEAR = 55;
+  // Vent speed is tied to drain, so every line spends ~1/3 of its cycle rearming
+  // instead of one line being punished far harder than another.
+  const VENT_RATIO = 2.4;
 
   /* ---------------- Player ---------------- */
   class Player {
@@ -438,13 +447,16 @@
         if (!w.unlocked) continue;
         const line = WEAPON_LINES[key];
         if (key !== this.activeWeapon) {
+          // Rested in the holster: refills at the line's own rate and is ready
+          // again as soon as it actually holds charge.
           w.charge = clamp(w.charge + line.recover * dt, 0, 100);
+          if (w.detuned && w.charge >= DETUNE_CLEAR) this.rearm(key, w, line);
         } else if (w.detuned) {
-          // A dry line vents while stuck: firing cannot drain it further, so it
-          // always climbs back to the re-arm threshold and the gun comes back.
-          w.charge = clamp(w.charge + line.recover * 0.6 * dt, 0, 100);
+          // Still held and dry: vent upward until the magazine is genuinely full,
+          // then re-arm. Anything lower and the next burst empties it again.
+          w.charge = clamp(w.charge + line.drain * VENT_RATIO * dt, 0, DETUNE_REARM);
+          if (w.charge >= DETUNE_REARM) this.rearm(key, w, line);
         }
-        if (w.charge >= DETUNE_RECOVER) w.detuned = false;
       }
       if (this.resT > 0) {
         this.resT -= dt;
@@ -452,6 +464,18 @@
           this.resonance = Math.max(0, this.resonance - 1);
           if (this.resonance) this.resT = RESONANCE_WINDOW;
         }
+      }
+    }
+
+    // Bringing a line back online is a beat the player should feel: the ring hits
+    // 100, the pill flares, and the gun is whole again.
+    rearm(key, w, line) {
+      w.detuned = false;
+      if (key !== this.activeWeapon) return;
+      const g = SF.Game;
+      if (g && g.fx) {
+        SF.Audio.sfx('ui');
+        g.fx.ring(this.x, this.y, line.tint, 12, 0.34, 74, 0.7);
       }
     }
 
@@ -501,7 +525,7 @@
       this.fireTimer = Math.min(this.fireTimer, 0.07);
       // Rotating onto a healthy line stacks resonance; rotating onto a dry one
       // buys nothing, so the swap has to be timed.
-      if (target.charge >= 55 && !target.detuned) {
+      if (target.charge >= DETUNE_CLEAR && !target.detuned) {
         this.resonance = Math.min(RESONANCE_MAX, this.resonance + 1);
         this.resT = RESONANCE_WINDOW;
       } else {
