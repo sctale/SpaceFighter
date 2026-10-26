@@ -280,6 +280,49 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   });
   fail('a dry line vents and re-arms without switching', vent.rearmedAt !== null && vent.rearmedAt > 1 && vent.rearmedAt < 8, vent);
 
+  // The complaint this guards: a meter that climbs a little, falls, detunes, climbs
+  // again — never reaching the top. Sixty seconds of held-trigger fire must produce a
+  // handful of clean full sweeps, not a fast sawtooth.
+  const cycle = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true; p.weapons[k].charge = 100; p.weapons[k].detuned = false;
+    }
+    p.selectWeapon('pulse'); p.level = 5; p.weapons.pulse.level = 5;
+    p.resonance = 0; p.resT = 0; p.overdrive = 0; p.invuln = 1e6;
+    p.x = SF.W * 0.5; p.y = SF.H * 0.8;
+    const dt = 1 / 60;
+    const series = [];
+    let t = 0;
+    while (t < 60) {
+      p.update(dt, g.input);
+      for (let j = g.playerBullets.length - 1; j >= 0; j--) if (!g.playerBullets[j].update(dt, p)) g.playerBullets.splice(j, 1);
+      series.push([+t.toFixed(2), +p.weapons.pulse.charge.toFixed(1), p.weapons.pulse.detuned ? 1 : 0]);
+      t += dt;
+    }
+    const w = series.map((r) => r[1]);
+    const d = series.map((r) => r[2]);
+    let tops = 0, dryBeforeTop = 0, wasTop = true, sawDry = false;
+    const readySpans = [];
+    let spanStart = null;
+    for (let i = 1; i < series.length; i++) {
+      const ch = series[i][1], det = series[i][2], prevCh = series[i - 1][1], prevDet = series[i - 1][2];
+      if (!wasTop && ch >= 99.5) { tops++; wasTop = true; if (sawDry) dryBeforeTop++; }
+      if (ch < 5) sawDry = true;
+      if (ch < 90) wasTop = false;
+      if (prevDet === 1 && det === 0) { spanStart = series[i][0]; }
+      if (prevDet === 0 && det === 1 && spanStart !== null) { readySpans.push(+(series[i][0] - spanStart).toFixed(1)); spanStart = null; }
+    }
+    // an open span at the end of the window is cut off by the test, not by the game
+    const detuneEpisodes = d.filter((v, i) => v === 1 && (i === 0 || d[i - 1] === 0)).length;
+    return { max: Math.max(...w), tops, dryBeforeTop, detuneEpisodes, readySpans, ventTo: w.filter((v, i) => d[i] === 0 && d[i - 1] === 1) };
+  });
+  fail('the charge meter really tops out (>=99.5) more than once per minute',
+    cycle.max >= 99.5 && cycle.tops >= 2 && cycle.dryBeforeTop === cycle.tops, cycle);
+  fail('no sawtooth: each re-arm is preceded by a full vent and buys a long healthy span',
+    cycle.detuneEpisodes <= 5 && cycle.readySpans.length >= 2
+    && cycle.readySpans.every((t) => t > 8) && cycle.ventTo.every((v) => v >= 99.5), cycle);
+
   const skies = await page.evaluate(() => {
     const g = __SF.game;
     const hashes = [];
@@ -314,6 +357,144 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   });
   fail('nova charges on the ring itself, legacy cards gone',
     hud.hasRingBtn && hud.ringConic && hud.legacyGone && hud.hasChip, hud);
+
+  // Fixed slots: lives, shield and the resonance badge may light up or go dark, but
+  // nothing on the strip is allowed to change width or shift position.
+  const stripLock = await page.evaluate(async () => {
+    const g = __SF.game;
+    const chip = document.getElementById('weaponChip');
+    const status = document.querySelector('.dash-status');
+    const livesEl = document.getElementById('hudLives');
+    const shots = [];
+    const snap = (tag) => {
+      g.ui.update(g);
+      const c = chip.getBoundingClientRect();
+      const st = status.getBoundingClientRect();
+      shots.push({
+        tag,
+        chipLeft: +c.left.toFixed(1),
+        chipW: +c.width.toFixed(1),
+        statusW: +st.width.toFixed(1),
+        statusH: +st.height.toFixed(1),
+        livesW: +livesEl.getBoundingClientRect().width.toFixed(1),
+        slots: livesEl.children.length,
+        // A slot that is only a placeholder must actually be invisible. An
+        // animation with fill-mode "both" once pinned one back to opacity 1.
+        lit: [...livesEl.children].filter((el) => Number(getComputedStyle(el).opacity) > 0.05).length,
+      });
+    };
+    const set = async (lives, shield, res, det) => {
+      g.lives = lives;
+      g.player.shieldCharges = shield;
+      g.player.resonance = res;
+      g.player.weapons.pulse.detuned = !!det;
+      g.player.weapons.pulse.charge = det ? 47 : 100;
+      // hull slots fade over .3s; read them once the transition has settled
+      await new Promise((r) => setTimeout(r, 420));
+      snap('L' + lives + '/S' + shield + '/R' + res + (det ? '/DET' : ''));
+    };
+    await set(3, 0, 0);
+    await set(1, 0, 0);
+    await set(3, 3, 0);
+    await set(5, 3, 4);
+    await set(2, 1, 3, true);
+    const ring = document.getElementById('btnNova').getBoundingClientRect();
+    const st = document.querySelector('.dash-status').getBoundingClientRect();
+    return { shots, aligned: Math.abs((st.top + st.height / 2) - (ring.top + ring.height / 2)) < 1.5, stripBottom: +st.bottom.toFixed(1), inner: innerHeight };
+  });
+  const geom = stripLock.shots;
+  const same = (k) => new Set(geom.map((g) => g[k])).size === 1;
+  fail('lives/shield occupy fixed rows: no reflow as states change',
+    same('chipLeft') && same('chipW') && same('statusW') && same('livesW') && same('slots') && geom[0].slots === 5, stripLock);
+  fail('only revealed hull slots are visible',
+    JSON.stringify(geom.map((g) => g.lit)) === JSON.stringify([3, 3, 3, 5, 3]), stripLock);
+  fail('the status stack sits on the same centre line as the action rings',
+    stripLock.aligned && geom[0].statusH >= 28 && geom[0].statusH <= 36, stripLock);
+
+  // Picking a difficulty rewrites the note under the picker. The card, and the start
+  // button below it, must not slide when the wording changes length.
+  const diffNote = await page.evaluate(() => {
+    const g = __SF.game;
+    g.ui.showScreen('menu');
+    const note = document.getElementById('diffNote');
+    const btn = document.getElementById('btnStart');
+    const card = document.querySelector('.menu-wrap');
+    const seen = {};
+    for (const id of ['cruise', 'standard', 'abyss']) {
+      g.setSetting('difficulty', id);
+      g.ui.applySettings();
+      const n = note.getBoundingClientRect();
+      seen[id] = {
+        noteH: +n.height.toFixed(1),
+        startTop: +btn.getBoundingClientRect().top.toFixed(1),
+        cardH: +card.getBoundingClientRect().height.toFixed(1),
+      };
+    }
+    g.setSetting('difficulty', 'standard');
+    g.ui.applySettings();
+    return seen;
+  });
+  // The same class of bug the strip had: a readout that grows with its content and
+  // drags the rest of the HUD along. Anchors are checked at their extremes — score
+  // digits, combo, and every boss label — left-anchored items may only grow right,
+  // right-anchored items only left, and the boss row may not change height at all.
+  const topLock = await page.evaluate(() => {
+    const g = __SF.game;
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const grab = () => ({
+      score: [+box('hudScore').left.toFixed(1), +box('hudScore').top.toFixed(1)],
+      best: [+box('hudBest').left.toFixed(1), +box('hudBest').top.toFixed(1)],
+      graze: [+box('hudGraze').left.toFixed(1), +box('hudGraze').top.toFixed(1)],
+      comboRight: +document.querySelector('.combo-box').getBoundingClientRect().right.toFixed(1),
+      comboTop: +document.querySelector('.combo-mult').getBoundingClientRect().top.toFixed(1),
+      metaH: +document.querySelector('.boss-meta').getBoundingClientRect().height.toFixed(1),
+      trackTop: +document.querySelector('.boss-track').getBoundingClientRect().top.toFixed(1),
+      nameLeft: +box('bossName').left.toFixed(1),
+      phaseTop: +box('bossPhase').top.toFixed(1),
+      phaseH: +box('bossPhase').height.toFixed(1),
+      wrapped: [...document.querySelectorAll('.boss-meta > *')].filter((el) => el.getBoundingClientRect().height > 18).length,
+    });
+    const shots = [];
+    const snap = (tag) => { g.ui.update(g); shots.push(Object.assign({ tag }, grab())); };
+    const realBoss = g.boss;
+    g.boss = { name: '门神', title: '星门守望者', en: 'GATEKEEPER', phase: 1, maxHp: 400, hp: 400, attack: { t: 0 }, attackLabel: '扇形齐射', mercy: 0, sector: 1, desperate: false };
+    g.combo = 12; g.multiplier = () => 1.4;
+    snap('base');
+    for (const [score, grazes, combo] of [[0, 0, 1], [9, 7, 87], [99, 999, 999], [1234, 8, 3]]) {
+      g.score = score * 100000 + grazes * 137;
+      g.grazes = grazes;
+      g.combo = combo;
+      g.ui.cache.mult = -1;
+      g.multiplier = () => (combo > 500 ? 12 : 1 + combo / 100);
+      snap('S' + score + 'G' + grazes + 'C' + combo);
+    }
+    for (const [name, title, en, phase, desperate, label] of [
+      ['门神', '星门守望者', 'GATEKEEPER', 1, false, '扇形齐射'],
+      ['织时者', '克洛诺斯回响', 'CHRONOWEAVER', 3, true, '预告 · 逆向双旋'],
+      ['赫利俄斯', '终焉', 'HELIOS', 2, false, '核心重载'],
+      ['赫利俄斯', '终焉', 'HELIOS', 3, true, '蓄招'],
+    ]) {
+      g.boss.name = name; g.boss.title = title; g.boss.en = en;
+      g.boss.phase = phase; g.boss.desperate = desperate;
+      g.boss.attackLabel = label; g.boss.attack = { t: 0 }; g.boss.mercy = 0;
+      g.ui.cache.bossName = '';
+      g.ui.cache.bossPhase = 0;
+      snap(name + 'P' + phase + (desperate ? 'D' : ''));
+    }
+    g.boss = realBoss;
+    g.combo = 0;
+    delete g.multiplier;
+    const keys = ['score', 'best', 'graze', 'comboRight', 'comboTop', 'metaH', 'trackTop', 'nameLeft', 'phaseH'];
+    const moved = keys.map((k) => ({ k, variants: [...new Set(shots.map((r) => JSON.stringify(r[k])))] }))
+      .filter((m) => m.variants.length > 1);
+    return { moved, rows: shots.length, wrapped: Math.max(...shots.map((r) => r.wrapped)), phaseTops: [...new Set(shots.map((r) => r.phaseTop))] };
+  });
+  fail('no HUD readout drags its neighbours when its content grows',
+    topLock.moved.length === 0 && topLock.wrapped === 0 && topLock.phaseTops.length <= 2, topLock);
+
+  fail('difficulty note never resizes the menu card',
+    new Set(Object.values(diffNote).map((d) => d.cardH)).size === 1
+    && new Set(Object.values(diffNote).map((d) => d.startTop)).size === 1, diffNote);
 
   const clampY = await page.evaluate(() => {
     const g = __SF.game, p = g.player;

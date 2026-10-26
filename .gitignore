@@ -50,6 +50,8 @@ keystore.properties
 .tools/final-visual.js
 .tools/visual.js
 .tools/capture-splash.js
+.tools/device-*.js
+.tools/probe-*.js
 .tools/build_assets*.py
 
 # editors and OS
