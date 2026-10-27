@@ -323,6 +323,75 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     cycle.detuneEpisodes <= 5 && cycle.readySpans.length >= 2
     && cycle.readySpans.every((t) => t > 8) && cycle.ventTo.every((v) => v >= 99.5), cycle);
 
+  // Swap crates: the answer to "one weapon from spawn to screen". The crate has to
+  // rotate onto the readiest holstered line, top it up, never be a wasted drop, and
+  // actually show up in the loot.
+  const swapCrate = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true; p.weapons[k].level = 3;
+      p.weapons[k].charge = 100; p.weapons[k].detuned = false;
+    }
+    p.selectWeapon('pulse'); p.resonance = 0; p.resT = 0; p.swapIdle = 22;
+    p.weapons.prism.charge = 34; p.weapons.swarm.charge = 50;
+    const r = p.swapToBest();
+    const trio = {
+      name: r.name, active: p.activeWeapon, charge: Math.round(p.weapons[r.name].charge),
+      res: p.resonance, idle: p.swapIdle, swapped: r.swapped,
+    };
+    // single line: nothing to rotate to, so the crate refills the gun you have
+    p.weapons.prism.unlocked = false; p.weapons.swarm.unlocked = false;
+    p.activeWeapon = 'pulse'; p.weapons.pulse.charge = 20; p.weapons.pulse.detuned = true;
+    const solo = p.swapToBest();
+    const single = { swapped: solo.swapped, charge: Math.round(p.weapons.pulse.charge), detuned: p.weapons.pulse.detuned };
+    // a crate must not resurrect a line that is still venting past full
+    p.weapons.prism.unlocked = true; p.weapons.swarm.unlocked = true;
+    p.weapons.prism.charge = 8; p.weapons.prism.detuned = true;
+    p.weapons.swarm.charge = 4; p.weapons.swarm.detuned = true;
+    const dry = p.swapToBest();
+    const drySwap = { name: dry.name, charge: Math.round(p.weapons[dry.name].charge), detuned: p.weapons[dry.name].detuned };
+    return { trio, single, drySwap };
+  });
+  fail('a swap crate rotates onto the readiest line and tops it up',
+    swapCrate.trio.name === 'swarm' && swapCrate.trio.active === 'swarm'
+    && swapCrate.trio.charge === 80 && swapCrate.trio.res === 1 && swapCrate.trio.idle === 0, swapCrate);
+  fail('with one line the crate refills instead of doing nothing',
+    swapCrate.single.swapped === false && swapCrate.single.charge === 65
+    && swapCrate.single.detuned === false, swapCrate);
+  fail('a crate cannot re-arm a line that is still venting below the clear',
+    swapCrate.drySwap.charge === 38 && swapCrate.drySwap.detuned === true, swapCrate);
+
+  const swapDrops = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true; p.weapons[k].charge = 100; p.weapons[k].detuned = false;
+    }
+    p.level = 5; p.shieldCharges = 3; p.drones.length = 0; p.reflectT = 6; g.lives = 5;
+    const tally = {};
+    for (let i = 0; i < 200; i++) {
+      g.pickups.length = 0;
+      p.swapIdle = 40;
+      g.director.collectSupply();
+      const type = g.pickups.some((x) => x.type === 'swap') ? 'swap'
+        : g.pickups.some((x) => x.type === 'gem') ? 'gems'
+          : (g.pickups[0] ? g.pickups[0].type : 'none');
+      tally[type] = (tally[type] || 0) + 1;
+    }
+    g.pickups.length = 0;
+    // and every sector clear hands one out once there is somewhere to rotate to
+    p.swapIdle = 0;
+    g.onBossDefeated({ x: SF.W * 0.5, y: SF.H * 0.3, def: { color: '#fff' } });
+    const loot = g.pickups.map((x) => x.type);
+    const xs = g.pickups.map((x) => x.x);
+    const offscreen = xs.filter((x) => x < 20 || x > SF.W - 20).length;
+    g.pickups.length = 0;
+    return { tally, hasSwap: loot.indexOf('swap') >= 0, lootCount: loot.length, offscreen };
+  });
+  fail('swap crates are a common mid-run drop',
+    (swapDrops.tally.swap || 0) >= 80, swapDrops);
+  fail('every sector clear hands out a swap crate, and the row stays on screen',
+    swapDrops.hasSwap && swapDrops.lootCount >= 5 && swapDrops.offscreen === 0, swapDrops);
+
   const skies = await page.evaluate(() => {
     const g = __SF.game;
     const hashes = [];
