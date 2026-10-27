@@ -19,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -37,7 +37,8 @@
         weaponRing: $('weaponRing'), resonanceBadge: $('resonanceBadge'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
         comboBox: $('comboBox'), comboMult: $('comboMult'), comboCount: $('comboCount'), comboFill: $('comboFill'),
-        novaPct: $('novaPct'),
+        novaPct: $('novaPct'), dashPct: $('dashPct'),
+        progress: $('dashProgress'), progressFill: $('dashProgressFill'),
         bossPanel: $('bossPanel'), bossName: $('bossName'), bossTitle: $('bossTitle'), bossPhase: $('bossPhase'), bossFill: $('bossFill'), bossPattern: $('bossPattern'),
         announce: $('announce'), announceTitle: $('announceTitle'), announceSub: $('announceSub'),
         hint: $('gameHint'), toast: $('toast'),
@@ -208,7 +209,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, nova: -1, ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -268,12 +269,12 @@
           el.weaponRing.style.setProperty('--pct', charge);
           // While a dry line vents, the label counts the climb so the recharge is
           // something you watch happen rather than guess at.
-          if (this.cache.weaponDetuned) el.weaponName.textContent = '失谐 ' + charge + '%';
+          if (this.cache.weaponDetuned) el.weaponName.textContent = '失谐排气';
           this.cache.weaponCharge = charge;
         }
         if (w.detuned !== this.cache.weaponDetuned) {
           el.weaponChip.classList.toggle('is-detuned', w.detuned);
-          if (w.detuned) el.weaponName.textContent = '失谐 0%';
+          if (w.detuned) el.weaponName.textContent = '失谐排气';
           else if (this.cache.weaponDetuned !== null) {
             const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
             el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
@@ -294,7 +295,7 @@
         }
         if (p.resonance !== this.cache.resonance && el.resonanceBadge) {
           el.resonanceBadge.classList.toggle('is-on', p.resonance > 0);
-          el.resonanceBadge.textContent = '共' + p.resonance;
+          el.resonanceBadge.textContent = '×' + p.resonance;
           el.resonanceBadge.classList.toggle('is-hot', p.resonance >= 3);
           this.cache.resonance = p.resonance;
         }
@@ -303,10 +304,11 @@
           Array.from(el.shieldPips.children).forEach((b, i) => b.classList.toggle('is-on', i < p.shieldCharges));
         }
         const novaRounded = Math.round(p.nova);
-        if (novaRounded !== this.cache.nova) {
-          el.novaPct.textContent = novaRounded + '%';
+        const novaLabel = novaRounded >= 100 ? 'READY' : novaRounded + '%';
+        if (novaLabel !== this.cache.nova) {
+          el.novaPct.textContent = novaLabel;
           el.btnNova.style.setProperty('--pct', Math.round(p.nova));
-          this.cache.nova = novaRounded;
+          this.cache.nova = novaLabel;
         }
         const ready = p.nova >= 100 && p.overdrive <= 0;
         if (ready !== this.cache.ready) {
@@ -314,10 +316,36 @@
           this.cache.ready = ready;
         }
         const dashRatio = Math.round(Math.max(0, 1 - p.dashCd / 1.7) * 100);
-        if (dashRatio !== this.cache.dash) {
+        // the caption doubles as the cooldown countdown — the one number a dash
+        // button needs, and it keeps the ring free to show the same thing
+        const dashLabel = p.dashCd > 0.05 ? p.dashCd.toFixed(1) + 's' : '闪避';
+        if (dashRatio !== this.cache.dash || dashLabel !== this.cache.dashText) {
           el.btnDash.style.setProperty('--pct', dashRatio);
           el.btnDash.classList.toggle('is-cooling', p.dashCd > 0.05);
+          el.dashPct.textContent = dashLabel;
           this.cache.dash = dashRatio;
+          this.cache.dashText = dashLabel;
+        }
+      }
+
+      // stage rail — waves advance it, the boss lights the marker at the end
+      if (el.progress) {
+        const d = game.director;
+        const total = d && d.script && d.script.length ? d.script.length : 1;
+        const state = d ? d.state : 'waves';
+        // 'idle' (sector intro, the seconds after a clear) holds the rail where it is
+        // rather than snapping an earned bar back to empty
+        const prog = state === 'waves' ? Math.min(0.9, (d.waveIndex / total) * 0.86)
+          : state === 'clearing' ? 0.96
+            : state === 'boss' ? 1 : null;
+        if (prog !== null) {
+          const rounded = Math.round(prog * 100);
+          if (rounded !== this.cache.progress) {
+            el.progress.style.setProperty('--p', rounded / 100);
+            this.cache.progress = rounded;
+          }
+          el.progress.classList.toggle('is-clearing', state === 'clearing');
+          el.progress.classList.toggle('is-boss', state === 'boss');
         }
       }
 

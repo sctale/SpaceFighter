@@ -62,20 +62,25 @@
             </span>
           </div>
           <button class="weapon-chip" id="weaponChip" type="button" aria-label="切换武器">
-            <span class="weapon-ring" id="weaponRing" aria-hidden="true"></span>
+            <span class="weapon-gauge" aria-hidden="true">
+              <span class="weapon-ring" id="weaponRing"></span>
+              <em class="res-badge" id="resonanceBadge">×0</em>
+            </span>
             <span class="weapon-copy">
               <span id="weaponName">脉冲炮</span>
               <i class="weapon-pips" id="weaponPips"></i>
             </span>
-            <em class="res-badge" id="resonanceBadge">共0</em>
           </button>
+        </div>
+        <div class="dash-progress" id="dashProgress" aria-hidden="true">
+          <i id="dashProgressFill"></i><b class="dash-progress-boss"></b>
         </div>
         <div class="dash-right">
           <button class="ring-btn ring-btn--focus" id="btnFocus" type="button" aria-label="精准模式">
-            <span>精准</span><small>FOCUS</small>
+            <span>精准</span><small>慢速</small>
           </button>
           <button class="ring-btn ring-btn--dash" id="btnDash" type="button" aria-label="冲刺">
-            <span>冲刺</span><small>DASH</small>
+            <span>冲刺</span><small id="dashPct">闪避</small>
           </button>
           <button class="ring-btn ring-btn--nova" id="btnNova" type="button" aria-label="释放星爆">
             <span>星爆</span><small id="novaPct">0%</small>
@@ -145,7 +150,7 @@
           <div class="control-hint"><span class="hint-key">冲刺</span><span>穿弹短暂无敌</span></div>
         </div>
 
-        <p class="menu-foot">v2.7.3 · 精准模式 / 擦弹经济 / 过关奖励 / 蓄能换线</p>
+        <p class="menu-foot">v2.7.4 · 精准模式 / 擦弹经济 / 过关奖励 / 蓄能换线</p>
       </div>
     </section>
 
