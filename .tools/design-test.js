@@ -503,6 +503,78 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     g.ui.applySettings();
     return seen;
   });
+  // Type and layout of the redesigned strip: one button module, no label may be
+  // ellipsized (the vent readout once was), and the stage rail must sit in the gap
+  // without either end of the strip overlapping it.
+  const stripType = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    const name = document.getElementById('weaponName');
+    const chip = document.getElementById('weaponChip').getBoundingClientRect();
+    const rail = document.querySelector('.dash-progress').getBoundingClientRect();
+    const right = document.querySelector('.dash-right').getBoundingClientRect();
+    const clipped = [];
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true;
+      for (let lv = 1; lv <= 5; lv++) {
+        p.weapons[k].level = lv;
+        p.activeWeapon = k; p.level = lv;
+        p.weapons[k].detuned = false; p.weapons[k].charge = 100;
+        g.ui.cache.weapon = -1;
+        g.ui.update(g);
+        if (name.scrollWidth > name.clientWidth + 0.5) clipped.push(k + 'L' + lv + '=' + name.textContent);
+      }
+      p.weapons[k].detuned = true; p.weapons[k].charge = 41;
+      g.ui.cache.weaponDetuned = false;
+      g.ui.update(g);
+      if (name.textContent !== '失谐排气' || name.scrollWidth > name.clientWidth + 0.5) {
+        clipped.push(k + ' vent=' + name.textContent);
+      }
+      p.weapons[k].detuned = false;
+    }
+    const sizes = ['btnFocus', 'btnDash', 'btnNova'].map((id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return r.width + 'x' + r.height;
+    });
+    const captions = ['btnFocus', 'btnDash', 'btnNova'].map((id) => Number(getComputedStyle(document.getElementById(id).querySelector('small')).fontSize.replace('px', '')));
+    return {
+      clipped, sizes, captions,
+      overlap: chip.right > rail.left + 0.5 || rail.right > right.left + 0.5,
+      novaReady: document.getElementById('novaPct').textContent,
+    };
+  });
+  fail('every weapon label fits the pill without ellipsis',
+    stripType.clipped.length === 0 && new Set(stripType.sizes).size === 1
+    && Math.min(...stripType.captions) >= 7 && !stripType.overlap, stripType);
+
+  const rail = await page.evaluate(() => {
+    const g = __SF.game;
+    const el = document.getElementById('dashProgress');
+    // the director's wave script is per-sector and may be empty right now, so give it
+    // a six-wave one and put the real one back at the end
+    const savedScript = g.director.script;
+    g.director.script = [{ after: 2 }, { after: 2 }, { after: 2 }, { after: 2 }, { after: 2 }, { after: 2 }];
+    const read = () => Math.round(Number(getComputedStyle(el).getPropertyValue('--p')) * 100);
+    g.director.state = 'waves'; g.director.waveIndex = 0;
+    g.ui.cache.progress = -1; g.ui.update(g);
+    const start = read();
+    g.director.waveIndex = 3;
+    g.ui.cache.progress = -1; g.ui.update(g);
+    const mid = read();
+    g.director.state = 'boss';
+    g.ui.cache.progress = -1; g.ui.update(g);
+    const boss = { p: read(), cls: el.className };
+    // the lull after a clear must not snap an earned bar back to empty
+    g.director.state = 'idle';
+    g.ui.cache.progress = -1; g.ui.update(g);
+    const held = read();
+    g.director.state = 'waves'; g.director.waveIndex = 0;
+    g.director.script = savedScript;
+    return { start, mid, boss, held, total: 6 };
+  });
+  fail('the stage rail tracks the sector timeline and lights the boss marker',
+    rail.start === 0 && rail.mid > 40 && rail.mid < 90
+    && rail.boss.p === 100 && rail.boss.cls.includes('is-boss') && rail.held === 100, rail);
+
   // The same class of bug the strip had: a readout that grows with its content and
   // drags the rest of the HUD along. Anchors are checked at their extremes — score
   // digits, combo, and every boss label — left-anchored items may only grow right,

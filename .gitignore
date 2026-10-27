@@ -52,6 +52,7 @@ keystore.properties
 .tools/capture-splash.js
 .tools/device-*.js
 .tools/probe-*.js
+.tools/strip-*.js
 .tools/build_assets*.py
 
 # editors and OS
