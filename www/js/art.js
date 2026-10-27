@@ -1306,6 +1306,7 @@
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const col = p.type === 'power' ? P.teal
+      : p.type === 'swap' ? P.teal
       : p.type === 'shield' ? P.violet
       : p.type === 'drone' ? P.violet
       : p.type === 'prism' ? P.violet
@@ -1316,7 +1317,7 @@
     ctx.restore();
 
     ctx.rotate(t * 0.7);
-    ctx.strokeStyle = p.type === 'power' ? P.gold : p.type === 'prism' ? P.violet : p.type === 'swarm' ? P.gold : p.type === 'reflect' ? P.gold : col;
+    ctx.strokeStyle = p.type === 'power' ? P.gold : p.type === 'prism' ? P.violet : p.type === 'swarm' ? P.gold : p.type === 'reflect' ? P.gold : p.type === 'swap' ? P.teal : col;
     ctx.fillStyle = 'rgba(6,10,22,.85)';
     ctx.lineWidth = 1.4;
     ctx.beginPath();
@@ -1386,6 +1387,20 @@
       ctx.beginPath();
       ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
       ctx.fill();
+    } else if (p.type === 'swap') {
+      // two opposing chevrons: this crate moves you to the other gun
+      ctx.fillStyle = P.teal;
+      ctx.beginPath();
+      ctx.moveTo(-6.5, -5); ctx.lineTo(-0.5, 0); ctx.lineTo(-6.5, 5); ctx.lineTo(-6.5, 2.2);
+      ctx.lineTo(-2.8, 0); ctx.lineTo(-6.5, -2.2);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = P.rose;
+      ctx.beginPath();
+      ctx.moveTo(6.5, 5); ctx.lineTo(0.5, 0); ctx.lineTo(6.5, -5); ctx.lineTo(6.5, -2.2);
+      ctx.lineTo(2.8, 0); ctx.lineTo(6.5, 2.2);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(0, 0, 1.3, 0, Math.PI * 2); ctx.fill();
     } else if (p.type === 'drone') {
       ctx.beginPath();
       ctx.moveTo(0, -6); ctx.lineTo(6, 4); ctx.lineTo(0, 1.5); ctx.lineTo(-6, 4);

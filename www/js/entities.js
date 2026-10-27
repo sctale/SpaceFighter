@@ -356,6 +356,7 @@
       this.weapons = this.freshWeapons();
       this.resonance = 0;
       this.resT = 0;
+      this.swapIdle = 0;
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
@@ -397,6 +398,7 @@
       this.weapons = this.freshWeapons();
       this.resonance = 0;
       this.resT = 0;
+      this.swapIdle = 0;
       this.shieldCharges = 1;
       this.reflectT = 0;
       this.drones = [];
@@ -479,6 +481,27 @@
       }
     }
 
+    // A swap crate rotates onto the readiest holstered line and tops that line up,
+    // so the gun you land on is immediately usable instead of half-dry. With only one
+    // line there is nothing to rotate to, so it refills that one — never a wasted drop.
+    swapToBest(topUp) {
+      const holstered = this.unlockedWeapons().filter((k) => k !== this.activeWeapon);
+      if (!holstered.length) {
+        const key = this.activeWeapon;
+        const w = this.weapons[key];
+        w.charge = clamp(w.charge + (topUp === undefined ? 45 : topUp), 0, 100);
+        if (w.detuned && w.charge >= DETUNE_CLEAR) this.rearm(key, w, WEAPON_LINES[key]);
+        return { swapped: false, name: key, charge: Math.round(w.charge) };
+      }
+      let best = holstered[0];
+      for (const k of holstered) if (this.weapons[k].charge > this.weapons[best].charge) best = k;
+      const target = this.weapons[best];
+      target.charge = clamp(target.charge + (topUp === undefined ? 30 : topUp), 0, 100);
+      if (target.detuned && target.charge >= DETUNE_CLEAR) this.rearm(best, target, WEAPON_LINES[best]);
+      const ok = this.selectWeapon(best);
+      return { swapped: ok, name: best, charge: Math.round(target.charge) };
+    }
+
     spendCharge() {
       const w = this.weapons[this.activeWeapon];
       if (w.detuned) return;   // venting: do not keep it pinned at zero
@@ -522,6 +545,7 @@
       this.weapons[this.activeWeapon].level = this.level;
       this.activeWeapon = name;
       this.level = target.level;
+      this.swapIdle = 0;
       this.fireTimer = Math.min(this.fireTimer, 0.07);
       // Rotating onto a healthy line stacks resonance; rotating onto a dry one
       // buys nothing, so the swap has to be timed.
@@ -651,6 +675,9 @@
 
     update(dt, input) {
       this.t += dt;
+      // How long the hull has been riding the same line — the director uses it to
+      // decide when to hand out a swap crate.
+      this.swapIdle += dt;
       this.muzzle = Math.max(0, this.muzzle - dt);
       this.hitFlash = Math.max(0, this.hitFlash - dt);
       if (this.invuln > 0) this.invuln -= dt;
@@ -1512,6 +1539,7 @@
       }
       if (this.type !== 'gem' && SF.Game && SF.chance(dt * 1.6)) {
         const col = this.type === 'power' ? SF.PALETTE.teal
+          : this.type === 'swap' ? SF.PALETTE.teal
           : this.type === 'shield' ? SF.PALETTE.violet
           : this.type === 'drone' ? SF.PALETTE.violet
           : this.type === 'prism' ? SF.PALETTE.violet

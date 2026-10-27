@@ -148,7 +148,7 @@
       const pal = SF.PALETTE;
       const col = type === 'life' ? pal.rose
         : (type === 'prism' || type === 'swarm' || type === 'reflect') ? pal.gold
-        : type === 'shield' ? pal.violet : pal.teal;
+        : type === 'shield' ? pal.violet : type === 'swap' ? pal.teal : pal.teal;
       game.fx.ring(px, py, col, 6, 0.55, 58);
       game.fx.spark(px, py, col, 5, 100, 0.35);
     }
@@ -222,11 +222,13 @@
           : !p.weapons.swarm.unlocked ? 'swarm'
           : SF.pick(['prism', 'swarm']);
       }
+      // Sitting on one line for a while? Make the crate that breaks the habit common.
+      else if (p && p.unlockedWeapons().length >= 2 && p.swapIdle > 10 && SF.chance(0.62)) type = 'swap';
       else if (p && p.shieldCharges < 3 && SF.chance(0.4)) type = 'shield';
       else if (p && p.drones.length < 3 && SF.chance(0.35)) type = 'drone';
       else if (p && p.reflectT <= 0 && SF.chance(0.25)) type = 'reflect';
       else if (g.lives <= 2 && SF.chance(0.3)) type = 'life';
-      else type = SF.pick(['power', 'power', 'shield', 'prism', 'swarm', 'gems']);
+      else type = SF.pick(['power', 'power', 'shield', 'swap', 'prism', 'swarm', 'gems']);
       if (type === 'gems') {
         for (let i = 0; i < 4; i++) {
           g.pickups.push(new SF.Pickup(SF.W * SF.rand(0.42, 0.58), -20 - i * 18, 'gem'));

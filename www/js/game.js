@@ -261,7 +261,8 @@
         { t: 15.6, html: touchUI ? 'NOVA 就绪后点击 <b>星爆</b>' : 'NOVA 就绪后按 <b>X</b> 释放星爆', duration: 3600 },
         { t: 22.5, html: touchUI ? '危险时点 <b>冲刺</b> · 短暂无敌穿越弹幕' : '<b>SPACE</b> 冲刺穿越弹幕 · 短暂无敌', duration: 3800 },
         { t: 31, html: '拾取 <b>棱镜 / 蜂群</b> 解锁武器线 · 各自升到 <b>LV.5</b>', duration: 4600 },
-        { t: 40, html: touchUI ? '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，换线更快还能攒 <b>共鸣</b>' : '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，按 <b>Q</b> 换线更快、还能攒 <b>共鸣</b>', duration: 5200 },
+        { t: 40, html: touchUI ? '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，点武器胶囊换线攒 <b>共鸣</b>' : '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，按 <b>Q</b> 换线更快、还能攒 <b>共鸣</b>', duration: 5200 },
+        { t: 46, html: '青色 <b>换线弹箱</b> · 立刻切到蓄能最满的武器线并回充，过关必掉', duration: 4400 },
         { t: 50, html: touchUI ? '按住 <b>精准</b> 键慢速移动 · 弹道收束、判定点显形' : '按住 <b>SHIFT</b> 精准移动 · 弹道收束、判定点显形', duration: 4200 },
       ];
       this.render();
@@ -1061,6 +1062,17 @@
           }
           break;
         }
+        case 'swap': {
+          const r = player.swapToBest();
+          const line = SF.WEAPON_LINES[r.name] || SF.WEAPON_LINES.pulse;
+          SF.Audio.sfx('power');
+          this.pickupMsg(r.swapped
+            ? '换线 · ' + SF.WEAPON_LINES[r.name].label + ' 蓄能 ' + r.charge + '%'
+            : '同线回充 ' + r.charge + '%', line.tint, 12);
+          this.fx.ring(player.x, player.y, line.tint, 16, 0.5, 96);
+          this.fx.sparkle(p.x, p.y, line.tint, 14);
+          break;
+        }
         case 'drone': {
           const kind = player.addDrone();
           if (kind) {
@@ -1318,9 +1330,13 @@
         : this.player && !this.player.weapons.swarm.unlocked ? 'swarm' : 'power'];
       loot.push(this.player && this.player.shieldCharges >= 2 ? 'reflect' : 'shield');
       loot.push(this.player && this.player.drones.length < 3 ? 'drone' : 'life');
+      // Once there is somewhere to rotate to, every sector clear hands out a crate
+      // that does the rotating for you — mono-weapon runs should not be the default.
+      if (this.player && this.player.unlockedWeapons().length >= 2) loot.push('swap');
       if (this.lives < 3) loot.push('life');
+      const gap = Math.min(56, (SF.W - 96) / Math.max(1, loot.length - 1));
       loot.forEach((type, i) => {
-        const lx = clamp(px + (i - (loot.length - 1) / 2) * 56, 46, SF.W - 46);
+        const lx = clamp(px + (i - (loot.length - 1) / 2) * gap, 46, SF.W - 46);
         this.pickups.push(new SF.Pickup(lx, py - Math.abs(i - (loot.length - 1) / 2) * 14, type));
         this.fx.ring(lx, py, P.gold, 5, 0.5, 46);
       });
