@@ -41,16 +41,11 @@
 
   Art.drawGlow = function (ctx, x, y, r, color, alpha) {
     const g = this.glow(color);
-    ctx.globalAlpha = alpha;
+    // 保留调用方已有的透明度（无敌残影、Boss 死亡淡出都依赖外层 globalAlpha）
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = prev * alpha;
     ctx.drawImage(g, x - r, y - r, r * 2, r * 2);
-    ctx.globalAlpha = 1;
-  };
-
-  Art.drawAddGlow = function (ctx, x, y, r, color, alpha) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    this.drawGlow(ctx, x, y, r, color, alpha);
-    ctx.restore();
+    ctx.globalAlpha = prev;
   };
 
   /* ---------------- init sprites ---------------- */
@@ -1066,6 +1061,7 @@
 
   /* ---------------- Bosses ---------------- */
   Art.drawBoss = function (ctx, boss, t) {
+    // 持续射击时不做整体白化，只增强命中泛光，避免 Boss 一直看起来是白色
     const flash = false;
     const s = boss.size;
     const time = t;
@@ -1291,7 +1287,7 @@
     if (boss.flash > 0) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      Art.drawGlow(ctx, 0, 0, s * 0.85, '#ffffff', Math.min(0.12, boss.flash * 1.2));
+      Art.drawGlow(ctx, 0, 0, s * 0.95, '#ffffff', Math.min(0.2, boss.flash * 2.2));
       ctx.restore();
     }
 

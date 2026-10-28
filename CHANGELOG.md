@@ -2,6 +2,45 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [2.7.5] - 2026-10-28
+
+### 修复（完整 Review 整改）
+
+- **换线弹箱真正接入游戏**：周期补给（19 秒）与中期补给改为走完整掉落池，骑同一条武器线超过 10 秒后 62% 出青色换线箱；此前该逻辑只存在于未被调用的 `collectSupply()` 里，实战只会在通关时看到换线箱
+- **低帧率不再穿弹**：子弹碰撞改为「上一帧 → 当前帧」线段扫掠，20 FPS 下高速狙击弹也不会直接穿过战机；玩家弹对敌机/Boss 同样生效
+- **无敌闪烁与 Boss 死亡淡出恢复**：`drawGlow` 不再把外层 `globalAlpha` 重置为 1，残影透明度重新生效
+- **冲刺方向修正**：没有任何移动记录时统一向上冲，不再按离屏幕中心的偏移斜冲
+- **新一局 BGM 调式重置**：上一局死在 Boss 后重开，第一星区不再沿用 Boss 音轨
+- **窗口变化时战机不再掉进仪表带**：resize 与常规移动统一使用 `H-104` 底部下限
+- **多点触控**：第二根手指不能抢走战机控制权
+- **Boss 招式全部可达**：`sweep` 进入守门人 P2 轮转、`homing` 进入织星者 P1 轮转，README 的 22 种不再是"代码里有、流程里没有"
+- **原生包不再暴露调试接口**：`__SF`（加命/加分/模拟）只在浏览器端保留给自动化测试
+- **容量上限策略**：敌弹超限时移除离玩家最远的一批；敌机满员时拒绝新生成，不再把场上敌机悄悄挤掉
+
+### 优化
+
+- 全屏星区渐变、护盾气泡、激光渐变改为缓存，减少每帧渐变创建
+- HUD 隐藏时同步 `visibility: hidden`，菜单/结算界面不会 Tab 聚焦到看不见的暂停按钮
+- 触摸滚动策略收敛：画布仍禁用触摸手势，菜单/暂停/结算面板保留纵向滚动
+- Boss 状态行固定行高，极值分数/长 Boss 名/临界徽章不会再撑高血条或推动相邻元素
+- 清理空状态块、兼容 no-op、未调用的 `Player.reset`、`Art.drawAddGlow`、`UI.hideAnnounce` 等死代码
+
+### 工程与测试
+
+- 版本号单一来源扩展：`sync-version` 同时写菜单脚注、Gradle `versionName` 与 `versionCode`（2.7.5 → 20750），`npm test` 校验三方一致
+- `android:build` / `android:build:win` 构建前强制执行 `npm run sync`，避免 APK 打包旧 `www/`
+- 测试脚本共用 `.tools/harness.js`：自动创建截图目录、优先 Chromium、Windows 回退 Edge
+- **断言失败现在会返回非零退出码**：`test:design` 累计失败数，`verify.js` 对版本、暂停/恢复、冲刺、星爆、Boss、FPS、压力模拟、console error 逐项断言
+- 换线箱回归改为走真实 `director.update` 计时链路，不再直接调用私有 `collectSupply()`
+- README 测试说明、目录树、Release 示例同步到实际脚本
+
+### 验证
+
+- `npm test`：全部检查通过，0 console/page error
+- `npm run test:design`：51 项断言全部通过
+- `npm run test:responsive`：360×640 / 800×1280 / 1440×900 无面板溢出
+- `npm run test:variety`：12 种敌机与 Boss 招式采样正常
+
 ## [2.7.4] - 2026-10-27
 
 ### 优化（底部仪表带重做 · 一套模数）

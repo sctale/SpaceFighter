@@ -1,10 +1,10 @@
 // Design regression: escort formation, weapon DPS spread, off-screen fairness,
 // and the boss spell rotation / phase pressure. Drives the real game objects.
-const { chromium } = require('playwright-core');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { launch, shotsDir } = require('./harness');
 const URL = pathToFileURL(path.join(__dirname, '..', 'www', 'index.html')).href;
-const SHOTS = path.join(__dirname, 'shots');
+const SHOTS = shotsDir();
 
 const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) => {
   const g = __SF.game;
@@ -25,13 +25,17 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
 }, { frames, perFrame });
 
 (async () => {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
-  const fail = (label, ok, info) => console.log((ok ? '  [OK]  ' : '  [FAIL]') + ' ' + label.padEnd(34) + JSON.stringify(info));
+  let failures = 0;
+  const fail = (label, ok, info) => {
+    if (!ok) failures++;
+    console.log((ok ? '  [OK]  ' : '  [FAIL]') + ' ' + label.padEnd(34) + JSON.stringify(info));
+  };
 
   await page.goto(URL);
   await page.waitForFunction(() => window.__SF_READY === true);
@@ -367,11 +371,17 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
       p.weapons[k].unlocked = true; p.weapons[k].charge = 100; p.weapons[k].detuned = false;
     }
     p.level = 5; p.shieldCharges = 3; p.drones.length = 0; p.reflectT = 6; g.lives = 5;
+    // 走真实的导演计时器，而不是直接调 collectSupply，保证“周期补给 -> 换线箱”真的接线
+    g.director.state = 'waves';
+    g.director.script.length = 0;
+    g.director.pending.length = 0;
+    g.director.waveTimer = 999;
     const tally = {};
     for (let i = 0; i < 200; i++) {
       g.pickups.length = 0;
       p.swapIdle = 40;
-      g.director.collectSupply();
+      g.director.supplyTimer = 0;
+      g.director.update(0.016);
       const type = g.pickups.some((x) => x.type === 'swap') ? 'swap'
         : g.pickups.some((x) => x.type === 'gem') ? 'gems'
           : (g.pickups[0] ? g.pickups[0].type : 'none');
@@ -1033,6 +1043,7 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     && diff.abyss.nova < 1 && diff.cruise.nova > 1, diff);
 
   console.log('\nERRORS', errors.length, errors.slice(0, 6).join('\n---\n'));
+  console.log('ASSERTIONS', failures === 0 ? 'ALL PASS' : failures + ' FAILED');
   await browser.close();
-  if (errors.length) process.exit(1);
+  if (failures || errors.length) process.exit(1);
 })().catch(e => { console.error('FAIL', e); process.exit(1); });

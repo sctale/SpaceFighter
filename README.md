@@ -49,7 +49,7 @@
 - 程序化矢量美术、预渲染精灵与粒子系统
 - Web Audio API 合成音乐与音效
 - Capacitor 8 封装 Android WebView
-- Playwright + Edge 做视觉、交互与压力回归
+- Playwright（Chromium / Edge）做视觉、交互与压力回归
 
 ## 快速开始
 
@@ -57,7 +57,7 @@
 
 ```bash
 npm install
-npx cap sync android
+npm run sync          # 同步版本号并复制 www/ 到 Android 工程
 ```
 
 ### 浏览器直接游玩
@@ -86,33 +86,35 @@ cd android
 ### 本地 Release APK
 
 ```bash
-cd android
-./gradlew assembleRelease
+npm run android:build        # macOS / Linux
+npm run android:build:win    # Windows
 ```
 
-产物位于：
+两个脚本都会先执行 `npm run sync`，避免把旧的 `www/` 资源打进 APK。产物位于：
 
 ```text
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
-当前仓库的 release 配置使用 debug 签名，方便本地安装与开源验证；正式上架前请替换为自己的 keystore，并妥善保管。
+版本号单一来源为 `package.json`：`sync-version` 会同时更新菜单脚注、Gradle `versionName` 与 `versionCode`（2.7.5 → 20750）。当前仓库的 release 配置使用 debug 签名，方便本地安装与开源验证；正式上架前请替换为自己的 keystore，并妥善保管。GitHub Release 分发可直接使用当前配置；Google Play 上架前还需将 `targetSdkVersion` 升到商店当年要求（当前 34），并在真机上复验沉浸式全屏与安全区。
 
 ## 测试
 
 ```bash
-npm test              # 冒烟 + 90 秒跨星区压力模拟 + 帧率
-npm run test:design   # 玩法设计回归（见下）
-npm run test:all      # 两者一起跑
+npm test                 # 冒烟 + 90 秒跨星区压力模拟 + 帧率 + 版本一致性
+npm run test:design      # 玩法设计回归（见下）
+npm run test:variety     # 敌机 / 武器 / Boss 招式采样
+npm run test:responsive  # 360×640 / 800×1280 / 1440×900 响应式截图
+npm run test:all         # 全部一起跑
 ```
 
-`npm test` 会启动 Edge headless，完成：
+测试默认使用 Playwright 自带 Chromium；Windows 本机没有时自动回退 Edge。Linux / CI 首次运行需执行 `npx playwright-core install chromium`，也可用 `SF_BROWSER_CHANNEL=msedge` 指定浏览器。失败会返回非零退出码。
 
-- 菜单、战斗、暂停、结算与触控流程
-- 12 种敌机和 Boss 招式采样
-- 武器模式、僚机、护盾与力场逻辑
-- 90 秒跨星区压力模拟、NaN 检测与帧率检查
-- 360×640、390×844、1440×900 响应式截图
+`npm test` 在 390×844、DPR 2 下完成：
+
+- 菜单、开始、键盘移动、冲刺、星爆、暂停/恢复、静音
+- Boss 战、帧率检查、90 秒跨星区压力模拟与 NaN 检测
+- 菜单脚注、`package.json`、Gradle `versionName/versionCode` 三方一致性
 
 `npm run test:design` 用同一份游戏对象做数值回归，51 项断言：
 
@@ -135,7 +137,7 @@ npm run test:all      # 两者一起跑
 - 蓄能是否真的能攒满（每轮顶到 100 才重新就绪，不出现 0↔34 锯齿）
 - 底部仪表带是否锁位：生命/护盾两行、共鸣徽章、武器名在任何状态组合下都不改变位置与尺寸
 - 分数、连击、Boss 名与「临界」徽章在极值文本下是否推动其他 HUD 元素
-- 换线弹箱是否切到最满的线并回充、单线时是否改为回充、补给 roll 与通关掉落是否真的给得出换线箱
+- 换线弹箱是否切到最满的线并回充、单线时是否改为回充、**周期补给计时器**与通关掉落是否真的走完整掉落池
 - 仪表带 18 种武器标签是否被省略号截断、三个动作键是否同尺寸、星区进度轨是否随波次推进
 - 新手 / 中期 / 满配三种构筑下 Boss 战时长是否落在设计区间
 - 站着不躲的船在阶段三能否被持续击落
@@ -155,6 +157,7 @@ www/
   js/director.js      星区波次编排
   js/ui.js            HUD 与屏幕状态
   js/game.js          状态机、碰撞、粒子与主循环
+  js/boot.js          启动入口与音频解锁
 android/              Capacitor Android 工程
 .tools/               视觉与回归测试脚本
 legacy/               v1.0 单文件旧版存档
@@ -165,10 +168,10 @@ legacy/               v1.0 单文件旧版存档
 版本号和更新说明以 `CHANGELOG.md` 为准。构建 APK 后，按项目约定将产物上传到 GitHub Release，不把大体积安装包提交进 Git。
 
 ```bash
-gh release create v2.2.0 \
-  --title "v2.2.0" \
+gh release create v2.7.5 \
+  --title "v2.7.5" \
   --notes-file release-notes.md \
-  SpaceFighter-v2.2.0.apk
+  SpaceFighter-v2.7.5.apk
 ```
 
 ## 第三方组件

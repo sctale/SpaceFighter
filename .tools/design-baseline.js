@@ -1,12 +1,11 @@
-const { chromium } = require('playwright-core');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { launch, shotsDir } = require('./harness');
 const URL = pathToFileURL(path.join(__dirname, '..', 'www', 'index.html')).href;
-const SHOTS = path.join(__dirname, 'shots', 'design');
-require('fs').mkdirSync(SHOTS, { recursive: true });
+const SHOTS = shotsDir('design');
 
 (async () => {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
   const errors = [];
@@ -135,4 +134,5 @@ require('fs').mkdirSync(SHOTS, { recursive: true });
 
   console.log('BASELINE_DONE', errors.length, errors.slice(0, 5).join('\n'));
   await browser.close();
+  if (errors.length) process.exit(1);
 })().catch(e => { console.error('FAIL', e); process.exit(1); });
