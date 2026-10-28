@@ -11,9 +11,18 @@
   const DRONE_LABELS = {
     gunner: '脉冲僚机', lance: '棱镜僚机', aegis: '守护僚机', swarm: '蜂群僚机',
   };
-  const WEAPON_LABELS = {
-    pulse: '脉冲阵列', prism: '棱镜贯穿', swarm: '蜂群追踪',
-  };
+  // 线段-点最近距离：子弹用上一帧到当前帧的位移做扫掠判定，
+  // 这样即使 20 FPS 下高速弹单帧位移超过判定直径，也不会直接穿过目标。
+  function segClosest(ax, ay, bx, by, px, py) {
+    const vx = bx - ax, vy = by - ay;
+    const len2 = vx * vx + vy * vy;
+    let t = 0;
+    if (len2 > 0) t = ((px - ax) * vx + (py - ay) * vy) / len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const x = ax + vx * t, y = ay + vy * t;
+    const dx = x - px, dy = y - py;
+    return { x, y, d2: dx * dx + dy * dy };
+  }
 
   class Game {
     constructor() {
@@ -31,8 +40,6 @@
       this.viewScale = 1;
       this.lastTime = 0;
       this.runTime = 0;
-      this.runCount = 0;
-      this.stressMode = false;
       this.godMode = false;
       this.uiReady = false;
 
@@ -90,7 +97,11 @@
       this.bg = new SF.Background();
       this.director = new SF.Director(this);
       this.input = new SF.Input(this.canvas);
-      this.exposeDebug();
+      // 原生包不暴露作弊/调试接口；浏览器端保留给自动化回归使用
+      const cap = window.Capacitor;
+      const capNative = !!(cap && (cap.isNativePlatform ? cap.isNativePlatform() : cap.platform && cap.platform !== 'web'));
+      const localHost = location.protocol === 'https:' && location.hostname === 'localhost';
+      if (!capNative && !localHost) this.exposeDebug();
       this.hookEvents();
     }
 
@@ -116,7 +127,8 @@
       if (this.bg) this.bg.resize();
       if (this.player) {
         this.player.x = clamp(this.player.x, 31, SF.W - 31);
-        this.player.y = clamp(this.player.y, SF.H * 0.18, SF.H - 44);
+        // 与 Player.update 使用同一个底部下限，避免窗口变化时战机掉进仪表带
+        this.player.y = clamp(this.player.y, SF.H * 0.18, SF.H - 104);
       }
       if (this.boss) {
         this.boss.targetY = Math.max(SF.H * 0.27, 252);
@@ -237,6 +249,8 @@
       SF.Audio.setMuted(!this.settings.sound);
       SF.Audio.setPaused(false);
       SF.Audio.setIntensity(1);
+      // 上一局可能停在 Boss 调式，新一局必须从波次音轨开始
+      SF.Audio.setMood('waves');
       SF.Audio.startMusic();
 
       this.runStartBest = SF.Storage.get('best', 0);
@@ -253,7 +267,6 @@
         this.ui.update(this);
         this.ui.announce('SECTOR 01', info.name + ' // ' + info.en, { duration: 2200, bottom: true });
       }
-      this.runCount++;
       const touchUI = document.body.classList.contains('is-touch');
       this.hints = [
         { t: 2.4, html: '<b>拖动</b> 驾驶战机 · <b>自动开火</b>', duration: 3200 },
@@ -669,7 +682,7 @@
         if (!b.update(w, this.player)) this.enemyBullets.splice(i, 1);
       }
       this.pointDefense();
-      if (this.enemyBullets.length > 420) this.enemyBullets.splice(0, this.enemyBullets.length - 420);
+      this.trimEnemyBullets();
 
       // enemies
       for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -679,13 +692,7 @@
       }
 
       // boss
-      if (this.boss) {
-        const boss = this.boss;
-        boss.update(w);
-        if (this.boss && this.boss.dying && boss.deathT > 2.6) {
-          // handled in onBossDefeated
-        }
-      }
+      if (this.boss) this.boss.update(w);
 
       // lasers
       for (let i = this.lasers.length - 1; i >= 0; i--) {
@@ -720,10 +727,24 @@
           this.comboTimer = 0;
         }
       }
+    }
 
-      if (this.stressMode) return;
-      if (this.uiReady && this.state === 'playing') {
-        // UI updated by the main loop
+    // 保险上限：超出时优先移除离玩家最远的弹幕，避免眼前的子弹凭空消失
+    trimEnemyBullets() {
+      const cap = 420;
+      if (this.enemyBullets.length <= cap) return;
+      const px = this.player ? this.player.x : SF.W / 2;
+      const py = this.player ? this.player.y : SF.H;
+      while (this.enemyBullets.length > cap) {
+        let worst = 0;
+        let worstD = -1;
+        for (let i = 0; i < this.enemyBullets.length; i++) {
+          const b = this.enemyBullets[i];
+          const dx = b.x - px, dy = b.y - py;
+          const d = dx * dx + dy * dy;
+          if (d > worstD) { worstD = d; worst = i; }
+        }
+        this.enemyBullets.splice(worst, 1);
       }
     }
 
@@ -787,12 +808,13 @@
         if (this.boss && !this.boss.entering && !this.boss.dying) {
           const rx = this.boss.size * 1.02 + b.r;
           const ry = this.boss.size * 0.82 + b.r;
-          const nx = (b.x - this.boss.x) / rx;
-          const ny = (b.y - this.boss.y) / ry;
+          const c = segClosest(b.prevX, b.prevY, b.x, b.y, this.boss.x, this.boss.y);
+          const nx = (c.x - this.boss.x) / rx;
+          const ny = (c.y - this.boss.y) / ry;
           if (nx * nx + ny * ny <= 1 && canHit(this.boss)) {
             this.boss.hit(b.dmg);
             if (player) player.addNova(0.12);
-            this.fx.impact(b.x, b.y, this.boss.def.color, 1.15);
+            this.fx.impact(c.x, c.y, this.boss.def.color, 1.15);
             consumeHit();
           }
         }
@@ -801,11 +823,10 @@
           for (let j = this.enemies.length - 1; j >= 0; j--) {
             const e = this.enemies[j];
             if (!e.targetable()) continue;
-            const dx = b.x - e.x, dy = b.y - e.y;
+            const c = segClosest(b.prevX, b.prevY, b.x, b.y, e.x, e.y);
             const rr = e.radius + b.r;
-            if (dx * dx + dy * dy < rr * rr && canHit(e)) {
-              b.x -= b.vx * 0.016;
-              const dead = e.hit(b.dmg, b.x, b.y);
+            if (c.d2 < rr * rr && canHit(e)) {
+              const dead = e.hit(b.dmg, c.x, c.y);
               if (player) player.addNova(0.06);
               if (dead) this.killEnemy(e);
               consumeHit();
@@ -822,9 +843,8 @@
       if (player.invuln <= 0 && player.dashT <= 0) {
         for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
           const b = this.enemyBullets[i];
-          const dx = b.x - player.x;
-          const dy = b.y - (player.y + 2);
-          const d2 = dx * dx + dy * dy;
+          const c = segClosest(b.prevX, b.prevY, b.x, b.y, player.x, player.y + 2);
+          const d2 = c.d2;
           const hitR = player.hitR + b.r;
           const grazeR = player.grazeR + b.r;
 
@@ -1103,10 +1123,6 @@
       if (this.uiReady) this.ui.update(this);
     }
 
-    playerWeaponExpired() {
-      // Kept as a compatibility no-op for older debug scripts.
-    }
-
     playerHit() {
       const player = this.player;
       if (!player || !player.alive) return;
@@ -1204,10 +1220,11 @@
     }
 
     spawnEnemy(type, x, y, opts) {
+      // 保险上限：满员时拒绝新生成，而不是把场上已有的敌机悄悄挤掉
+      if (this.enemies.length >= 42) return null;
       opts = opts || {};
       const e = new SF.Enemy(type, x, y, Object.assign({}, opts, { sector: this.sector }));
       this.enemies.push(e);
-      if (this.enemies.length > 42) this.enemies.shift();
       return e;
     }
 
@@ -1563,7 +1580,6 @@
     stress(seconds, opts) {
       opts = opts || {};
       if (this.state !== 'playing') this.start();
-      this.stressMode = true;
       const prevGod = this.godMode;
       this.godMode = true;
       const wasMuted = SF.Audio.muted;
@@ -1611,7 +1627,6 @@
         errors.push(String(e && e.stack || e));
       }
       const snap = this.snapshot();
-      this.stressMode = false;
       this.godMode = prevGod;
       SF.Audio.muted = wasMuted;
       return {

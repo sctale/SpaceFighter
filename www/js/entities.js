@@ -19,6 +19,8 @@
     constructor(x, y, vx, vy, opts) {
       opts = opts || {};
       this.x = x; this.y = y;
+      // 上一帧坐标：碰撞用线段扫掠，低帧率下高速弹不会直接穿过战机/敌机
+      this.prevX = x; this.prevY = y;
       this.vx = vx; this.vy = vy;
       this.kind = opts.kind || 'orb';
       this.friendly = !!opts.friendly;
@@ -91,6 +93,8 @@
 
     update(dt, player) {
       this.age += dt;
+      this.prevX = this.x;
+      this.prevY = this.y;
       if (this.fuse > 0) {
         this.fuse -= dt;
         if (this.fuse <= 0) { this.burst(); return false; }
@@ -230,7 +234,8 @@
       if (this.kind === 'flash') {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        SF.Art.drawGlow(ctx, this.x, this.y, this.size, this.color, alpha);
+        // 当前 globalAlpha 已经是淡出值，drawGlow 内部会再乘一次，这里传 1
+        SF.Art.drawGlow(ctx, this.x, this.y, this.size, this.color, 1);
         ctx.globalAlpha = alpha * 0.9;
         ctx.fillStyle = 'rgba(255,255,255,.85)';
         ctx.beginPath();
@@ -387,31 +392,6 @@
         prism: { level: 1, unlocked: false, charge: 100, detuned: false },
         swarm: { level: 1, unlocked: false, charge: 100, detuned: false },
       };
-    }
-
-    reset() {
-      this.x = SF.W / 2;
-      this.y = SF.H - 130;
-      this.alive = true;
-      this.level = 2;
-      this.activeWeapon = 'pulse';
-      this.weapons = this.freshWeapons();
-      this.resonance = 0;
-      this.resT = 0;
-      this.swapIdle = 0;
-      this.shieldCharges = 1;
-      this.reflectT = 0;
-      this.drones = [];
-      this.fireTimer = 0;
-      this.focus = false;
-      this.invuln = 1.8;
-      this.nova = 0;
-      this.overdrive = 0;
-      this.dashT = 0;
-      this.dashCd = 0;
-      this.dragging = false;
-      this.after.length = 0;
-      this.bank = 0;
     }
 
     get hitR() { return 4.6; }
@@ -638,10 +618,10 @@
     tryDash() {
       if (this.dashCd > 0 || !this.alive) return false;
       let dx = this.lastMX, dy = this.lastMY;
-      if (Math.abs(dx) + Math.abs(dy) < 0.01) {
-        dx = this.x - (SF.W / 2);
+      // 没有任何移动记录时统一向上冲，不再按“离屏幕中心的偏移”斜冲
+      if (Math.hypot(dx, dy) < 0.01) {
+        dx = 0;
         dy = -1;
-        if (Math.abs(dx) < 1) dx = 0;
       }
       const len = Math.hypot(dx, dy) || 1;
       this.dashDirX = dx / len;
@@ -1002,11 +982,17 @@
           ctx.save();
           ctx.translate(this.x, this.y);
           ctx.globalCompositeOperation = 'lighter';
-          const bubble = ctx.createRadialGradient(0, 0, rr * 0.5, 0, 0, rr + 4);
-          bubble.addColorStop(0, 'rgba(155,140,255,0)');
-          bubble.addColorStop(0.72, 'rgba(155,140,255,.09)');
-          bubble.addColorStop(1, 'rgba(105,245,220,.22)');
-          ctx.fillStyle = bubble;
+          // 渐变按护盾层数缓存，避免每帧重新创建
+          if (!this._bubbleGrad || this._bubbleCtx !== ctx || this._bubbleCharge !== this.shieldCharges) {
+            const bubble = ctx.createRadialGradient(0, 0, rr * 0.5, 0, 0, rr + 4);
+            bubble.addColorStop(0, 'rgba(155,140,255,0)');
+            bubble.addColorStop(0.72, 'rgba(155,140,255,.09)');
+            bubble.addColorStop(1, 'rgba(105,245,220,.22)');
+            this._bubbleGrad = bubble;
+            this._bubbleCtx = ctx;
+            this._bubbleCharge = this.shieldCharges;
+          }
+          ctx.fillStyle = this._bubbleGrad;
           ctx.beginPath();
           ctx.arc(0, 0, rr + 4, 0, TAU);
           ctx.fill();
@@ -1620,10 +1606,17 @@
       } else {
         const env = Math.min(1, (this.t - this.warn) * 12, (this.warn + this.active - this.t) * 8);
         ctx.globalCompositeOperation = 'lighter';
-        const grad = ctx.createLinearGradient(0, 0, len, 0);
-        grad.addColorStop(0, 'rgba(255,255,255,.95)');
-        grad.addColorStop(0.2, 'rgba(255,210,220,.8)');
-        grad.addColorStop(1, 'rgba(255,111,145,.05)');
+        // 光束渐变只和长度有关，缓存后不必每帧重建
+        if (!this._grad || this._gradCtx !== ctx || this._gradLen !== len) {
+          const grad = ctx.createLinearGradient(0, 0, len, 0);
+          grad.addColorStop(0, 'rgba(255,255,255,.95)');
+          grad.addColorStop(0.2, 'rgba(255,210,220,.8)');
+          grad.addColorStop(1, 'rgba(255,111,145,.05)');
+          this._grad = grad;
+          this._gradCtx = ctx;
+          this._gradLen = len;
+        }
+        const grad = this._grad;
         ctx.strokeStyle = 'rgba(255,111,145,.24)';
         ctx.lineWidth = width * 2 * env;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len, 0); ctx.stroke();
@@ -1660,7 +1653,7 @@
       size: 76, hp: 400, color: P.rose, glow: P.rose,
       phases: [
         ['fan', 'wallGap', 'twinBeam', 'mineCurtain'],
-        ['spiral', 'wallGap', 'pulsar', 'fan', 'twinBeam'],
+        ['spiral', 'wallGap', 'pulsar', 'fan', 'twinBeam', 'sweep'],
         ['charge', 'crossSweep', 'wallGap', 'cascade', 'ring', 'spiral'],
       ],
       shape: 'hex',
@@ -1669,7 +1662,7 @@
       id: 'weaver', name: '薇尔', title: '织星者', en: 'STAR WEAVER',
       size: 80, hp: 380, color: P.violet, glow: P.violet,
       phases: [
-        ['ring', 'homingBarrage', 'cross', 'waveCurtain'],
+        ['ring', 'homing', 'homingBarrage', 'cross', 'waveCurtain'],
         ['spiralDouble', 'blink', 'homingBarrage', 'summon', 'cross'],
         ['crossSweep', 'laserWeb', 'spiralDouble', 'homingBarrage', 'ring', 'waveCurtain'],
       ],
@@ -1737,7 +1730,6 @@
       this.y = -this.size * 2.2;
       this.targetY = Math.max(SF.H * 0.27, 252);
       this.t = 0;
-      this.age = 0;
       this.flash = 0;
       this.entering = true;
       this.dying = false;
@@ -1748,10 +1740,8 @@
       this.phase = 1;
       this.seqIdx = 0;
       this.spellCount = 0;
-      this.attacksUsed = [];
       this.rewarded = false;
       this.bobPhase = Math.random() * TAU;
-      this.lastPattern = '';
       this.lockMove = false;
       this.attackLabel = '';
       this.mercy = 0;
@@ -1766,7 +1756,6 @@
 
     update(dt) {
       this.t += dt;
-      this.age += dt;
       this.flash = Math.max(0, this.flash - dt);
       if (this.entering) {
         this.y += (this.targetY - this.y) * (1 - Math.exp(-3.2 * dt));
@@ -1868,9 +1857,6 @@
       // Late in phase 3 the rotation wraps into a double cast: the boss follows
       // itself straight out of a spell instead of idling.
       this.spellCount++;
-      this.attacksUsed.push(name);
-      if (this.attacksUsed.length > 5) this.attacksUsed.shift();
-      this.lastPattern = name;
       this.startAttack(name);
     }
 

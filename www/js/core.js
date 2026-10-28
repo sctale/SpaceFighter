@@ -127,6 +127,8 @@
 
       c.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        // 已有一根手指在驾驶时，忽略后续手指，避免多指互相抢方向盘
+        if (this.pointer.down && this.pointer.id !== null) return;
         if (e.pointerType === 'touch' || e.pointerType === 'pen') {
           this.hasTouch = true;
           document.body.classList.add('is-touch');
@@ -145,6 +147,8 @@
       }, { passive: false });
 
       c.addEventListener('pointermove', (e) => {
+        // 只接受当前主指针的移动；第二根手指不能驱动战机
+        if (this.pointer.down && this.pointer.id !== null && e.pointerId !== this.pointer.id) return;
         const isTouchLike = e.pointerType === 'touch' || e.pointerType === 'pen';
         if (!isTouchLike || this.pointer.down) {
           const p = map(e.clientX, e.clientY);

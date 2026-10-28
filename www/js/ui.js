@@ -32,7 +32,7 @@
       this.el = {
         stage: $('stage'),
         stageWarn: $('stageWarn'),
-        score: $('hudScore'), best: $('hudBest'), hudBest: $('hudBest'), graze: $('hudGraze'), sector: $('hudSector'), sectorName: $('hudSectorName'),
+        score: $('hudScore'), best: $('hudBest'), graze: $('hudGraze'), sector: $('hudSector'), sectorName: $('hudSectorName'),
         lives: $('hudLives'), weaponChip: $('weaponChip'), weaponName: $('weaponName'), weaponPips: $('weaponPips'),
         weaponRing: $('weaponRing'), resonanceBadge: $('resonanceBadge'),
         shieldChip: $('shieldChip'), shieldPips: $('shieldPips'),
@@ -201,7 +201,7 @@
       this.bestSectorValue = SF.Storage.get('bestSector', 1);
       this.el.menuBest.textContent = this.fmt(this.bestValue);
       this.el.menuSector.textContent = SF.pad2(this.bestSectorValue);
-      this.el.hudBest.textContent = this.fmt(this.bestValue);
+      this.el.best.textContent = this.fmt(this.bestValue);
     }
 
     fmt(n) {
@@ -456,11 +456,6 @@
       this.warnTimer = setTimeout(() => el.classList.remove('is-on'), ms || 2600);
     }
 
-    hideAnnounce() {
-      this.el.announce.classList.remove('is-show');
-      if (this.announceTimer) clearTimeout(this.announceTimer);
-    }
-
     hint(html, duration) {
       const el = this.el;
       el.hint.innerHTML = html;
@@ -561,10 +556,6 @@
 
     bossWarn() {
       this.el.bossPanel.hidden = true;
-    }
-
-    onOverdriveEnd() {
-      this.toast('星爆超频结束');
     }
   }
 

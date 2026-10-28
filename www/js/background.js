@@ -35,12 +35,17 @@
       this.nebula = null;
       this.aurora = null;
       this.lastH = 0;
+      // 全屏渐变按星区缓存，尺寸变化后失效重建
+      this._gradCtx = null;
+      this._gradSector = 0;
+      this._grads = null;
       this.resize();
     }
 
     resize() {
       const W = SF.W, H = SF.H;
       this.lastH = H;
+      this._gradCtx = null;
       this.nebula = this.buildNebula(W, H);
       this.aurora = this.buildAurora(W, Math.max(1200, H * 1.5));
       this.stars = [];
@@ -339,12 +344,38 @@
       }
     }
 
+    buildGradients(ctx, sector) {
+      const W = SF.W, H = SF.H;
+      const look = SECTOR_LOOKS[((sector || 1) - 1) % SECTOR_LOOKS.length];
+      const tc = look.tint;
+      const wash = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, H * 0.8);
+      wash.addColorStop(0, `rgba(${tc},0.03)`);
+      wash.addColorStop(0.45, `rgba(${tc},0.06)`);
+      wash.addColorStop(1, `rgba(${tc},0.015)`);
+      const topBand = ctx.createLinearGradient(0, 0, 0, H * 0.5);
+      topBand.addColorStop(0, `rgba(${tc},0.06)`);
+      topBand.addColorStop(1, `rgba(${tc},0)`);
+      const scrim = ctx.createRadialGradient(W / 2, H * 0.44, H * 0.08, W / 2, H * 0.44, H * 0.68);
+      scrim.addColorStop(0, 'rgba(3,5,12,0.05)');
+      scrim.addColorStop(0.65, 'rgba(3,5,12,0.16)');
+      scrim.addColorStop(1, 'rgba(3,5,12,0.32)');
+      const vg = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.22, W / 2, H * 0.45, H * 0.78);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,.26)');
+      this._grads = { wash, topBand, scrim, vg };
+      this._gradCtx = ctx;
+      this._gradSector = sector || 1;
+    }
+
     draw(ctx, opts) {
       opts = opts || {};
       const W = SF.W, H = SF.H;
       const t = this.t;
       const play = opts.mode === 'game';
       const danger = opts.danger || 0;
+      const sector = opts.sector || 1;
+      if (this._gradCtx !== ctx || this._gradSector !== sector) this.buildGradients(ctx, sector);
+      const grads = this._grads;
 
       // baked nebula
       if (this.nebula) ctx.drawImage(this.nebula, 0, 0, W, H);
@@ -426,35 +457,20 @@
       if (opts.mode === 'menu') this.drawMenuScene(ctx, t);
 
       // sector-themed sky: tinted wash + signature feature
-      const look = SECTOR_LOOKS[((opts.sector || 1) - 1) % SECTOR_LOOKS.length];
-      const tc = look.tint;
-      const wash = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, H * 0.8);
-      wash.addColorStop(0, `rgba(${tc},0.03)`);
-      wash.addColorStop(0.45, `rgba(${tc},0.06)`);
-      wash.addColorStop(1, `rgba(${tc},0.015)`);
-      ctx.fillStyle = wash;
+      const look = SECTOR_LOOKS[(sector - 1) % SECTOR_LOOKS.length];
+      ctx.fillStyle = grads.wash;
       ctx.fillRect(0, 0, W, H);
-      const topBand = ctx.createLinearGradient(0, 0, 0, H * 0.5);
-      topBand.addColorStop(0, `rgba(${tc},0.06)`);
-      topBand.addColorStop(1, `rgba(${tc},0)`);
-      ctx.fillStyle = topBand;
+      ctx.fillStyle = grads.topBand;
       ctx.fillRect(0, 0, W, H * 0.5);
       if (play) this.drawSectorFeature(ctx, look, t);
 
       if (play) {
-        const scrim = ctx.createRadialGradient(W / 2, H * 0.44, H * 0.08, W / 2, H * 0.44, H * 0.68);
-        scrim.addColorStop(0, 'rgba(3,5,12,0.05)');
-        scrim.addColorStop(0.65, 'rgba(3,5,12,0.16)');
-        scrim.addColorStop(1, 'rgba(3,5,12,0.32)');
-        ctx.fillStyle = scrim;
+        ctx.fillStyle = grads.scrim;
         ctx.fillRect(0, 0, W, H);
       }
 
       // edge darkening — gentle enough to keep the nebula visible
-      const vg = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.22, W / 2, H * 0.45, H * 0.78);
-      vg.addColorStop(0, 'rgba(0,0,0,0)');
-      vg.addColorStop(1, 'rgba(0,0,0,.26)');
-      ctx.fillStyle = vg;
+      ctx.fillStyle = grads.vg;
       ctx.fillRect(0, 0, W, H);
     }
 

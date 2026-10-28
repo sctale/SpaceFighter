@@ -264,7 +264,8 @@
             this.waveTimer = this.script[this.waveIndex] ? this.script[this.waveIndex].after : 2.4;
             if (this.waveIndex === Math.ceil(this.script.length * 0.55) && !this.midSupply) {
               this.midSupply = true;
-              this.queueSupply('power');
+              // 中期补给走完整掉落池：换线箱、护盾、僚机等都会按当前状态出现
+              this.collectSupply();
             }
           } else {
             this.state = 'clearing';
@@ -275,7 +276,8 @@
         this.supplyTimer -= dt;
         if (this.supplyTimer <= 0) {
           this.supplyTimer = 19;
-          this.queueSupply('power');
+          // 周期补给也走完整掉落池，"骑同一条线超 10 秒"的换线箱才真正生效
+          this.collectSupply();
         }
       } else if (this.state === 'clearing') {
         this.clearTimer += dt;

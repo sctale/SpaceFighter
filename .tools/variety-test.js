@@ -1,11 +1,11 @@
-const { chromium } = require('playwright-core');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { launch, shotsDir } = require('./harness');
 const URL = pathToFileURL(path.join(__dirname, '..', 'www', 'index.html')).href;
-const SHOTS = path.join(__dirname, 'shots');
+const SHOTS = shotsDir();
 
 (async () => {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
   const errors = [];
@@ -156,12 +156,15 @@ const SHOTS = path.join(__dirname, 'shots');
     await page.waitForTimeout(1500);
   }
 
-  const hud = await page.evaluate(() => ({
-    pattern: document.getElementById('bossPattern').textContent,
-    patternLive: document.getElementById('bossPattern').classList.contains('is-live'),
-    shieldHidden: document.getElementById('shieldChip').hidden,
-    modHidden: document.getElementById('weaponMod').hidden,
-  }));
+  const hud = await page.evaluate(() => {
+    const mod = document.getElementById('weaponMod');
+    return {
+      pattern: document.getElementById('bossPattern').textContent,
+      patternLive: document.getElementById('bossPattern').classList.contains('is-live'),
+      shieldHidden: document.getElementById('shieldChip').hidden,
+      modHidden: mod ? mod.hidden : true,
+    };
+  });
   console.log('HUD', JSON.stringify(hud));
 
   console.log('ERRORS', errors.length, errors.slice(0, 5).join('\n---\n'));
