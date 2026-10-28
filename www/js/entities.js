@@ -156,7 +156,7 @@
       }
 
       this.trailT -= dt;
-      if (this.trailT <= 0 && SF.Game && !SF.Game.lowFx()) {
+      if (this.trailT <= 0 && SF.Game && !SF.Game.settings.lowFx) {
         const special = this.kind === 'needle' || this.kind === 'wave' || this.kind === 'plasma'
           || this.kind === 'lance' || this.kind === 'micro' || this.kind === 'beam';
         if (special) {

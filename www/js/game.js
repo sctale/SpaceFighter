@@ -39,8 +39,6 @@
       const moreContrast = !!(window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches);
       this.settings = Object.assign({ sound: true, shake: true, lowFx: reduceMotion, haptic: true, difficulty: 'standard' }, SF.Storage.get('settings', {}));
       this.highContrast = moreContrast;
-      this.autoLowFx = false;
-      this.slowFrameTime = 0;
       this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
       this.viewScale = 1;
       this.lastTime = 0;
@@ -172,7 +170,6 @@
 
         this.handleGlobalInput();
         if (this.state === 'playing') {
-          this.trackPerformance(dt);
           this.updatePlaying(dt);
           if (this.uiReady) this.ui.update(this);
         } else if (this.state === 'menu') {
@@ -184,28 +181,6 @@
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
-    }
-
-    // 低帧率自动降特效：连续约 2.5 秒低于 36 FPS 就临时减粒子/闪光
-    trackPerformance(dt) {
-      if (this.autoLowFx) return;
-      if (dt > 0.028) this.slowFrameTime = Math.min(4, this.slowFrameTime + dt);
-      else this.slowFrameTime = Math.max(0, this.slowFrameTime - dt * 0.6);
-      if (this.slowFrameTime >= 2.5) {
-        this.autoLowFx = true;
-        document.body.classList.add('auto-reduce-fx');
-        if (this.uiReady) this.ui.toast('帧率偏低 · 已自动降低特效');
-      }
-    }
-
-    lowFx() {
-      return this.settings.lowFx || this.autoLowFx;
-    }
-
-    resetAutoFx() {
-      this.autoLowFx = false;
-      this.slowFrameTime = 0;
-      document.body.classList.remove('auto-reduce-fx');
     }
 
     handleGlobalInput() {
@@ -352,7 +327,6 @@
       this.pickupMsgCount = 0;
       this.pickupMsgTimer = 0;
       this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
-      this.resetAutoFx();
       this.director.startSector(1);
     }
 
@@ -400,7 +374,6 @@
       this.timeScale = 1;
       this.deathTimer = 0;
       this.director.stop();
-      this.resetAutoFx();
       SF.Audio.setPaused(false);
       SF.Audio.setIntensity(0);
       SF.Audio.stopMusic();
@@ -469,7 +442,7 @@
       };
       const fx = {
         spark(x, y, color, count, speed, life) {
-          const n = Math.round((count || 5) * (g.lowFx() ? 0.5 : 1));
+          const n = Math.round((count || 5) * (g.settings.lowFx ? 0.5 : 1));
           for (let i = 0; i < n; i++) {
             const a = Math.random() * TAU;
             const sp = (speed || 140) * SF.rand(0.35, 1.1);
@@ -508,7 +481,7 @@
         },
         impact(x, y, color, power) {
           power = power || 1;
-          const low = g.lowFx();
+          const low = g.settings.lowFx;
           add(new SF.Particle(x, y, {
             life: 0.11, size: 7 * power, grow: 28 * power,
             color: P.white, kind: 'flash', drag: 0,
@@ -527,7 +500,7 @@
           fx.ring(x, y, color, 2, 0.18, 20 * power, 0.55);
         },
         rays(x, y, color, count, length, life) {
-          const n = Math.round((count || 16) * (g.lowFx() ? 0.45 : 1));
+          const n = Math.round((count || 16) * (g.settings.lowFx ? 0.45 : 1));
           for (let i = 0; i < n; i++) {
             const a = (i / n) * TAU + SF.rand(-0.08, 0.08);
             const sp = SF.rand(length * 0.55, length);
@@ -551,7 +524,7 @@
           }
         },
         nova(x, y) {
-          const low = g.lowFx();
+          const low = g.settings.lowFx;
           fx.ring(x, y, P.white, 8, 0.34, Math.max(SF.W, SF.H) * 0.72, 0.75);
           fx.ring(x, y, P.gold, 24, 0.58, Math.max(SF.W, SF.H) * 1.05, 0.55);
           fx.ring(x, y, P.teal, 48, 0.82, Math.max(SF.W, SF.H) * 1.35, 0.35);
@@ -569,7 +542,7 @@
         },
         explosion(x, y, scale, color) {
           scale = Math.max(0.9, scale || 1);
-          const low = g.lowFx();
+          const low = g.settings.lowFx;
           const tint = color || P.gold;
 
           // hot core + soft coloured bloom
@@ -614,10 +587,10 @@
         },
         shake(mag) {
           if (!g.settings.shake) return;
-          g.shakeMag = Math.max(g.shakeMag, mag * (g.lowFx() ? 0.6 : 1));
+          g.shakeMag = Math.max(g.shakeMag, mag * (g.settings.lowFx ? 0.6 : 1));
         },
         flash(color, alpha) {
-          if (g.lowFx()) alpha *= 0.5;
+          if (g.settings.lowFx) alpha *= 0.5;
           g.flashColor = color || '255,255,255';
           g.flashA = Math.max(g.flashA, alpha);
         },
@@ -627,7 +600,7 @@
         shock(x, y, color) {
           fx.ring(x, y, color, 20, 0.7, Math.max(SF.W, SF.H) * 0.9);
           fx.ring(x, y, P.white, 10, 0.4, 200);
-          for (let i = 0; i < (g.lowFx() ? 8 : 22); i++) {
+          for (let i = 0; i < (g.settings.lowFx ? 8 : 22); i++) {
             const a = (i / 22) * TAU;
             add(new SF.Particle(x, y, {
               vx: Math.cos(a) * SF.rand(500, 900), vy: Math.sin(a) * SF.rand(500, 900),

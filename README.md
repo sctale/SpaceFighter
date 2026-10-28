@@ -28,7 +28,7 @@
 - **三档难度**：巡航 / 标准 / 深渊，缩放弹幕密度、Boss 血量与得分（深渊 ×1.35）
 - **分层音轨**：程序化音乐随波次、Boss 阶段与「临界」逐层加码，Boss 战切换为更暗的调式
 - **星区推进**：10 个命名星区循环，每区一套专属天空（巨行星 / 环带 / 极光 / 裂隙 / 岩带 / 恒星 / 双月 / 彗星 / 光纱 / 核心弧环），敌机数量、弹速、血量与 Boss 强度逐步提升
-- **自适应画质**：连续低帧自动降低粒子/闪光；`prefers-reduced-motion` 默认轻柔特效，`prefers-contrast: more` 为敌弹加白色外圈
+- **画质与对比度**：暂停菜单可手动开启「轻柔特效」；`prefers-reduced-motion` 默认轻柔，`prefers-contrast: more` 为敌弹加白色外圈
 - **本地优先**：无账号、无服务器、无网络请求；最高分、最远星区与设置仅存在 `localStorage`
 
 ## 操作
@@ -98,7 +98,7 @@ npm run android:build:win    # Windows
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
-版本号单一来源为 `package.json`：`sync-version` 会同时更新菜单脚注、Gradle `versionName` 与 `versionCode`（2.8.0 → 20800）。
+版本号单一来源为 `package.json`：`sync-version` 会同时更新菜单脚注、Gradle `versionName` 与 `versionCode`（2.8.1 → 20810）。
 
 ### 发布签名
 
@@ -133,7 +133,7 @@ npm run test:all         # 全部一起跑
 - Boss 战、帧率检查、90 秒跨星区压力模拟与 NaN 检测
 - 菜单脚注、`package.json`、Gradle `versionName/versionCode` 三方一致性
 
-`npm run test:design` 用同一份游戏对象做数值回归，65 项断言：
+`npm run test:design` 用同一份游戏对象做数值回归，64 项断言：
 
 - 僚机是否停在左右翼位（不绕圈）
 - 主机弹与僚机弹的弹种是否互不重叠
@@ -158,7 +158,7 @@ npm run test:all         # 全部一起跑
 - 连续 4 次补给是否必出缺失武器 / 僚机、Boss 血量曲线后期是否封顶、棱镜对巨构是否增伤
 - 相位冲刺是否给 NOVA/分数、超频击杀是否延长窗口、三种词缀是否分别改变防御/射速/死亡爆裂
 - Boss 破防是否停招并增伤、破防槽与状态文字是否上 HUD、装配摘要/星区预告/结算新统计是否生效
-- 低帧是否自动降特效、高对比偏好是否接入
+- 高对比偏好是否接入
 - 仪表带 18 种武器标签是否被省略号截断、三个动作键是否同尺寸、星区进度轨是否随波次推进
 - 新手 / 中期 / 满配三种构筑下 Boss 战时长是否落在设计区间
 - 站着不躲的船在阶段三能否被持续击落
@@ -189,10 +189,10 @@ legacy/               v1.0 单文件旧版存档
 版本号和更新说明以 `CHANGELOG.md` 为准。构建 APK 后，按项目约定将产物上传到 GitHub Release，不把大体积安装包提交进 Git。
 
 ```bash
-gh release create v2.8.0 \
-  --title "v2.8.0" \
+gh release create v2.8.1 \
+  --title "v2.8.1" \
   --notes-file release-notes.md \
-  SpaceFighter-v2.8.0.apk
+  SpaceFighter-v2.8.1.apk
 ```
 
 ## 第三方组件

@@ -1642,5 +1642,3 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
 /* Low-FX mode toggled from pause */
 body.reduce-fx .stage-scan { display: none; }
 body.reduce-fx .stage-vignette { opacity: .6; }
-body.auto-reduce-fx .stage-scan { display: none; }
-body.auto-reduce-fx .stage-vignette { opacity: .7; }

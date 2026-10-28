@@ -1197,12 +1197,6 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
       breaks: document.getElementById('finalBreaks').textContent,
     };
 
-    // --- 低帧自动降特效 ---
-    g.autoLowFx = false;
-    g.slowFrameTime = 0;
-    for (let i = 0; i < 80; i++) g.trackPerformance(0.05);
-    out.autoFx = { auto: g.autoLowFx, low: g.lowFx() };
-    g.resetAutoFx();
     out.contrast = typeof g.highContrast === 'boolean';
     return out;
   });
@@ -1218,7 +1212,6 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   fail('pause summary compares all weapon lines', iter.summary.includes('速射') && iter.summary.includes('贯穿') && iter.summary.includes('追踪') && iter.summary.includes('未解锁'), iter.summary);
   fail('sector intro previews the boss', iter.threat.includes('巨构') && iter.threat.includes('赫利俄斯'), iter.threat);
   fail('result card shows phase and break stats', iter.result.phases === '7' && iter.result.breaks === '3', iter.result);
-  fail('low frame time auto-reduces effects', iter.autoFx.auto === true && iter.autoFx.low === true, iter.autoFx);
   fail('high-contrast preference is wired', iter.contrast === true, iter.contrast);
 
   console.log('\nERRORS', errors.length, errors.slice(0, 6).join('\n---\n'));
