@@ -53,7 +53,7 @@
 
 ## 快速开始
 
-要求 Node.js 20+；构建 Android 还需要 JDK 17+ 与 Android SDK（compileSdk 36）。
+要求 Node.js 20+；构建 Android 还需要 JDK 21+ 与 Android SDK（compileSdk 36）。
 
 ```bash
 npm install
@@ -96,7 +96,22 @@ npm run android:build:win    # Windows
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
-版本号单一来源为 `package.json`：`sync-version` 会同时更新菜单脚注、Gradle `versionName` 与 `versionCode`（2.7.5 → 20750）。当前仓库的 release 配置使用 debug 签名，方便本地安装与开源验证；正式上架前请替换为自己的 keystore，并妥善保管。GitHub Release 分发可直接使用当前配置；Google Play 上架前还需将 `targetSdkVersion` 升到商店当年要求（当前 34），并在真机上复验沉浸式全屏与安全区。
+版本号单一来源为 `package.json`：`sync-version` 会同时更新菜单脚注、Gradle `versionName` 与 `versionCode`（2.7.6 → 20760）。
+
+### 发布签名
+
+Release 使用项目固定 keystore，签名文件与密码**不入库**：
+
+```text
+android/keystore/spacefighter-release.jks   # 固定发布密钥，请单独备份
+android/keystore.properties                 # storeFile / storePassword / keyAlias / keyPassword
+```
+
+缺少上述文件时，`assembleRelease` 会回退 `debug` 签名并打印警告——只适合本地验证，跨机器/后续版本无法覆盖升级。请务必备份 keystore 与密码；一旦丢失，已安装用户只能卸载重装。
+
+> v2.7.4 / v2.7.5 与 v2.7.6 签名不同，首次升级到 2.7.6 需要卸载旧版一次；从 2.7.6 起的后续版本可直接覆盖升级。
+
+GitHub Release 分发可直接使用当前配置；Google Play 上架前还需将 `targetSdkVersion` 升到商店当年要求（当前 34），并在真机上复验沉浸式全屏与安全区。
 
 ## 测试
 
@@ -168,10 +183,10 @@ legacy/               v1.0 单文件旧版存档
 版本号和更新说明以 `CHANGELOG.md` 为准。构建 APK 后，按项目约定将产物上传到 GitHub Release，不把大体积安装包提交进 Git。
 
 ```bash
-gh release create v2.7.5 \
-  --title "v2.7.5" \
+gh release create v2.7.6 \
+  --title "v2.7.6" \
   --notes-file release-notes.md \
-  SpaceFighter-v2.7.5.apk
+  SpaceFighter-v2.7.6.apk
 ```
 
 ## 第三方组件

@@ -2,7 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [2.7.6] - 2026-10-28
+
+### 修复（签名冲突）
+
+- v2.7.5 由远程构建环境临时生成的 debug keystore 签名，与 v2.7.4 的签名不一致，覆盖安装会提示「程序包与现有程序包冲突」
+- 本版接入**项目固定发布签名**：`android/keystore.properties` + `android/keystore/spacefighter-release.jks`，未配置时回退 debug 并打印警告
+- 签名文件与密码均不入库（`.gitignore` 已排除 `*.jks`、`keystore.properties`），请单独备份
+- 版本号 2.7.6 / versionCode 20760
+
+### 重要
+
+- 从 v2.7.4 或 v2.7.5 升级到 v2.7.6 需要**先卸载旧版一次**（签名变更）；从 2.7.6 开始的后续版本可直接覆盖升级
+- v2.7.5 为临时签名验证版，不建议安装
+
+### 验证
+
+- `npm test`：版本三方一致、冒烟与 90 秒压力模拟通过
+- `aapt dump badging`：`versionCode=20760`、`versionName=2.7.6`
+- `apksigner verify --print-certs`：证书 SHA-256 `6fc6ccee…e0ca`
+
 ## [2.7.5] - 2026-10-28
+
+> 注意：本版使用临时调试签名，与旧版签名不一致；请安装 v2.7.6。
 
 ### 修复（完整 Review 整改）
 
