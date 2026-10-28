@@ -35,7 +35,12 @@
       this.director = null;
 
       this.state = 'menu';
-      this.settings = Object.assign({ sound: true, shake: true, lowFx: false, haptic: true, difficulty: 'standard' }, SF.Storage.get('settings', {}));
+      const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const moreContrast = !!(window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches);
+      this.settings = Object.assign({ sound: true, shake: true, lowFx: reduceMotion, haptic: true, difficulty: 'standard' }, SF.Storage.get('settings', {}));
+      this.highContrast = moreContrast;
+      this.autoLowFx = false;
+      this.slowFrameTime = 0;
       this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
       this.viewScale = 1;
       this.lastTime = 0;
@@ -57,6 +62,8 @@
       this.lives = 3;
       this.kills = 0;
       this.grazes = 0;
+      this.phases = 0;
+      this.bossBreaks = 0;
       this.novasFired = 0;
       this.hitsTaken = 0;
       this.sectorHits = 0;
@@ -165,6 +172,7 @@
 
         this.handleGlobalInput();
         if (this.state === 'playing') {
+          this.trackPerformance(dt);
           this.updatePlaying(dt);
           if (this.uiReady) this.ui.update(this);
         } else if (this.state === 'menu') {
@@ -176,6 +184,28 @@
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
+    }
+
+    // 低帧率自动降特效：连续约 2.5 秒低于 36 FPS 就临时减粒子/闪光
+    trackPerformance(dt) {
+      if (this.autoLowFx) return;
+      if (dt > 0.028) this.slowFrameTime = Math.min(4, this.slowFrameTime + dt);
+      else this.slowFrameTime = Math.max(0, this.slowFrameTime - dt * 0.6);
+      if (this.slowFrameTime >= 2.5) {
+        this.autoLowFx = true;
+        document.body.classList.add('auto-reduce-fx');
+        if (this.uiReady) this.ui.toast('帧率偏低 · 已自动降低特效');
+      }
+    }
+
+    lowFx() {
+      return this.settings.lowFx || this.autoLowFx;
+    }
+
+    resetAutoFx() {
+      this.autoLowFx = false;
+      this.slowFrameTime = 0;
+      document.body.classList.remove('auto-reduce-fx');
     }
 
     handleGlobalInput() {
@@ -264,8 +294,9 @@
         this.ui.resetRun();
         this.ui.updateMenuStats();
         const info = SF.sectorInfo(1);
+        const boss = SF.BOSS_TYPES[0];
         this.ui.update(this);
-        this.ui.announce('SECTOR 01', info.name + ' // ' + info.en, { duration: 2200, bottom: true });
+        this.ui.announce('SECTOR 01', info.name + ' // 巨构 ' + boss.name + ' 接近', { duration: 2200, bottom: true });
       }
       const touchUI = document.body.classList.contains('is-touch');
       this.hints = [
@@ -277,6 +308,8 @@
         { t: 40, html: touchUI ? '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，点武器胶囊换线攒 <b>共鸣</b>' : '武器线打空会 <b>失谐</b> · 排气到 <b>满</b> 才重新就绪，按 <b>Q</b> 换线更快、还能攒 <b>共鸣</b>', duration: 5200 },
         { t: 46, html: '青色 <b>换线弹箱</b> · 立刻切到蓄能最满的武器线并回充，过关必掉', duration: 4400 },
         { t: 50, html: touchUI ? '按住 <b>精准</b> 键慢速移动 · 弹道收束、判定点显形' : '按住 <b>SHIFT</b> 精准移动 · 弹道收束、判定点显形', duration: 4200 },
+        { t: 56, html: touchUI ? '<b>冲刺</b>穿过弹幕触发 <b>相位</b> · 额外星爆充能' : '<b>SPACE</b> 穿过弹幕触发 <b>相位</b> · 额外星爆充能', duration: 4400 },
+        { t: 63, html: '青色弧段 <b>装甲</b> · 金色箭头 <b>急速</b> · 玫红虚线 <b>爆裂</b>', duration: 4800 },
       ];
       this.render();
     }
@@ -295,6 +328,8 @@
       this.lives = 3;
       this.kills = 0;
       this.grazes = 0;
+      this.phases = 0;
+      this.bossBreaks = 0;
       this.novasFired = 0;
       this.hitsTaken = 0;
       this.sectorHits = 0;
@@ -317,6 +352,7 @@
       this.pickupMsgCount = 0;
       this.pickupMsgTimer = 0;
       this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
+      this.resetAutoFx();
       this.director.startSector(1);
     }
 
@@ -364,6 +400,7 @@
       this.timeScale = 1;
       this.deathTimer = 0;
       this.director.stop();
+      this.resetAutoFx();
       SF.Audio.setPaused(false);
       SF.Audio.setIntensity(0);
       SF.Audio.stopMusic();
@@ -402,6 +439,8 @@
           time: this.runTime * 1000,
           grazes: this.grazes,
           novas: this.novasFired,
+          phases: this.phases,
+          breaks: this.bossBreaks,
           hits: this.hitsTaken,
           maxMult: this.multiplier(),
           build: this.player ? {
@@ -430,7 +469,7 @@
       };
       const fx = {
         spark(x, y, color, count, speed, life) {
-          const n = Math.round((count || 5) * (g.settings.lowFx ? 0.5 : 1));
+          const n = Math.round((count || 5) * (g.lowFx() ? 0.5 : 1));
           for (let i = 0; i < n; i++) {
             const a = Math.random() * TAU;
             const sp = (speed || 140) * SF.rand(0.35, 1.1);
@@ -469,7 +508,7 @@
         },
         impact(x, y, color, power) {
           power = power || 1;
-          const low = g.settings.lowFx;
+          const low = g.lowFx();
           add(new SF.Particle(x, y, {
             life: 0.11, size: 7 * power, grow: 28 * power,
             color: P.white, kind: 'flash', drag: 0,
@@ -488,7 +527,7 @@
           fx.ring(x, y, color, 2, 0.18, 20 * power, 0.55);
         },
         rays(x, y, color, count, length, life) {
-          const n = Math.round((count || 16) * (g.settings.lowFx ? 0.45 : 1));
+          const n = Math.round((count || 16) * (g.lowFx() ? 0.45 : 1));
           for (let i = 0; i < n; i++) {
             const a = (i / n) * TAU + SF.rand(-0.08, 0.08);
             const sp = SF.rand(length * 0.55, length);
@@ -512,7 +551,7 @@
           }
         },
         nova(x, y) {
-          const low = g.settings.lowFx;
+          const low = g.lowFx();
           fx.ring(x, y, P.white, 8, 0.34, Math.max(SF.W, SF.H) * 0.72, 0.75);
           fx.ring(x, y, P.gold, 24, 0.58, Math.max(SF.W, SF.H) * 1.05, 0.55);
           fx.ring(x, y, P.teal, 48, 0.82, Math.max(SF.W, SF.H) * 1.35, 0.35);
@@ -530,7 +569,7 @@
         },
         explosion(x, y, scale, color) {
           scale = Math.max(0.9, scale || 1);
-          const low = g.settings.lowFx;
+          const low = g.lowFx();
           const tint = color || P.gold;
 
           // hot core + soft coloured bloom
@@ -575,10 +614,10 @@
         },
         shake(mag) {
           if (!g.settings.shake) return;
-          g.shakeMag = Math.max(g.shakeMag, mag * (g.settings.lowFx ? 0.6 : 1));
+          g.shakeMag = Math.max(g.shakeMag, mag * (g.lowFx() ? 0.6 : 1));
         },
         flash(color, alpha) {
-          if (g.settings.lowFx) alpha *= 0.5;
+          if (g.lowFx()) alpha *= 0.5;
           g.flashColor = color || '255,255,255';
           g.flashA = Math.max(g.flashA, alpha);
         },
@@ -588,7 +627,7 @@
         shock(x, y, color) {
           fx.ring(x, y, color, 20, 0.7, Math.max(SF.W, SF.H) * 0.9);
           fx.ring(x, y, P.white, 10, 0.4, 200);
-          for (let i = 0; i < (g.settings.lowFx ? 8 : 22); i++) {
+          for (let i = 0; i < (g.lowFx() ? 8 : 22); i++) {
             const a = (i / 22) * TAU;
             add(new SF.Particle(x, y, {
               vx: Math.cos(a) * SF.rand(500, 900), vy: Math.sin(a) * SF.rand(500, 900),
@@ -812,7 +851,7 @@
           const nx = (c.x - this.boss.x) / rx;
           const ny = (c.y - this.boss.y) / ry;
           if (nx * nx + ny * ny <= 1 && canHit(this.boss)) {
-            this.boss.hit(b.dmg);
+            this.boss.hit(b.dmg * (b.bossBonus || 1));
             if (player) player.addNova(0.12);
             this.fx.impact(c.x, c.y, this.boss.def.color, 1.15);
             consumeHit();
@@ -838,6 +877,27 @@
       }
 
       if (!player || !player.alive) return;
+
+      // 相位冲刺：无敌帧内穿过弹幕给额外 NOVA / 分数，奖励主动穿缝
+      if (player.dashT > 0) {
+        for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+          const b = this.enemyBullets[i];
+          if (b.phased) continue;
+          const dx = b.x - player.x, dy = b.y - (player.y + 2);
+          if (dx * dx + dy * dy < 34 * 34) {
+            b.phased = true;
+            this.phases++;
+            this.grazes++;
+            this.sectorGrazes++;
+            player.addNova(0.55);
+            this.score += Math.round(6 * mult);
+            this.fx.spark(b.x, b.y, P.teal, 3, 80, 0.2);
+            if (this.phases % 5 === 0) {
+              this.fx.text(player.x, player.y - 44, 'PHASE ×' + this.phases, P.gold, 12, { life: 0.8 });
+            }
+          }
+        }
+      }
 
       // enemy bullets vs player
       if (player.invuln <= 0 && player.dashT <= 0) {
@@ -947,7 +1007,13 @@
       const mult = this.multiplier();
       const points = Math.round(e.score * mult * this.diff.scoreMul);
       this.score += points;
-      if (this.player) this.player.addNova(e.elite ? 7 : 2.5);
+      if (this.player) {
+        this.player.addNova(e.elite ? 7 : 2.5);
+        // 超频期间继续击杀会延长爆发窗口，鼓励在星爆里主动进攻
+        if (this.player.overdrive > 0) {
+          this.player.overdrive = Math.min(9.5, this.player.overdrive + (e.elite ? 0.26 : 0.11));
+        }
+      }
 
       const now = performance.now();
       if (now - this.lastExplodeSound > 65) {
@@ -965,6 +1031,14 @@
       }
 
       this.dropLoot(e);
+
+      // 爆裂词缀：死亡延迟半秒后向四周炸开弹幕，必须离开原地
+      if (e.affix === 'volatile') {
+        this.enemyBullets.push(new SF.Bullet(e.x, e.y, 0, 0, {
+          kind: 'plasma', r: 11, fuse: 0.5, split: 6, life: 1.2, scale: 1.1,
+        }));
+        this.fx.ring(e.x, e.y, P.rose, 6, 0.55, 70, 0.8);
+      }
 
       if (e.type === 'splitter') {
         for (let k = 0; k < 2; k++) {
@@ -1269,6 +1343,18 @@
       }
     }
 
+    onBossBreak(boss) {
+      this.bossBreaks++;
+      SF.Audio.sfx('bigExplode');
+      this.fx.shake(11);
+      this.fx.flash('255,210,122', 0.22);
+      this.fx.ring(boss.x, boss.y, P.gold, boss.size * 0.5, 0.45, boss.size * 3.2, 0.9);
+      this.fx.rays(boss.x, boss.y, P.gold, 10, boss.size * 2.2, 0.4);
+      this.hitstop(0.05);
+      this.haptic([20, 30, 20]);
+      if (this.uiReady) this.ui.announce('CORE BREAK', '核心破防 · 伤害窗口', { duration: 1200 });
+    }
+
     onBossPhase(boss) {
       SF.Audio.setIntensity(boss.phase >= 3 ? 3 : 2);
       // Mercy window: the board is wiped so a phase change reads as a breath,
@@ -1386,7 +1472,8 @@
       this.saveProgress();
       if (this.uiReady) {
         const info = SF.sectorInfo(this.sector);
-        this.ui.announce('SECTOR ' + SF.pad2(this.sector), info.name + ' // ' + info.en, { duration: 2200, bottom: true });
+        const boss = SF.BOSS_TYPES[(this.sector - 1) % SF.BOSS_TYPES.length];
+        this.ui.announce('SECTOR ' + SF.pad2(this.sector), info.name + ' // 巨构 ' + boss.name + ' 接近', { duration: 2200, bottom: true });
         this.ui.update(this);
       }
     }
@@ -1538,6 +1625,8 @@
         kills: this.kills,
         combo: this.combo,
         maxCombo: this.maxCombo,
+        phases: this.phases,
+        bossBreaks: this.bossBreaks,
         nova: p ? Math.round(p.nova) : 0,
         level: p ? p.level : 0,
         shield: p ? p.shieldCharges : 0,
@@ -1552,6 +1641,7 @@
           entering: this.boss.entering, dying: this.boss.dying,
           attack: this.boss.attack ? this.boss.attack.name : null,
           label: this.boss.attackLabel || '',
+          broken: this.boss.broken, stagger: Math.round(this.boss.stagger),
         } : null,
         enemyTypes: types,
         bulletKinds: bulletKinds,

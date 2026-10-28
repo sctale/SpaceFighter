@@ -30,6 +30,8 @@
       this.supplyTimer = 0;
       this.pending = [];
       this.spawnedCount = 0;
+      this.pityWeapon = 0;
+      this.pityDrone = 0;
     }
 
     static sectorInfo(n) {
@@ -48,6 +50,10 @@
       this.pending = [];
       this.spawnedCount = 0;
       this.midSupply = false;
+      if (sector === 1) {
+        this.pityWeapon = 0;
+        this.pityDrone = 0;
+      }
     }
 
     stop() {
@@ -135,6 +141,15 @@
       this.pending.push({ kind: 'enemy', type, x, y, t: delay, opts: opts || {} });
     }
 
+    // 第 3 星区起给部分敌机挂词缀；精英机与陨石/分裂幼体不挂，保持可读性
+    rollAffix(type, opts) {
+      opts = opts || {};
+      if (opts.affix || opts.elite || this.sector < 3 || type === 'rock' || type === 'shardling') return opts;
+      const p = 0.16 + Math.min(0.14, (this.sector - 3) * 0.02);
+      if (!SF.chance(p)) return opts;
+      return Object.assign({}, opts, { affix: SF.pick(['armored', 'rapid', 'volatile']) });
+    }
+
     queueSupply(type) {
       this.pending.push({ kind: 'pickup', type, t: 0.2 });
     }
@@ -215,20 +230,27 @@
     collectSupply() {
       const g = this.game;
       const p = g.player;
+      const missingWeapon = !!(p && (!p.weapons.prism.unlocked || !p.weapons.swarm.unlocked));
       let type;
       if (p && p.level < 3) type = 'power';
-      else if (p && (!p.weapons.prism.unlocked || !p.weapons.swarm.unlocked) && SF.chance(0.3)) {
+      else if (missingWeapon && (this.pityWeapon >= 3 || SF.chance(0.35))) {
         type = !p.weapons.prism.unlocked ? 'prism'
           : !p.weapons.swarm.unlocked ? 'swarm'
           : SF.pick(['prism', 'swarm']);
       }
       // Sitting on one line for a while? Make the crate that breaks the habit common.
       else if (p && p.unlockedWeapons().length >= 2 && p.swapIdle > 10 && SF.chance(0.62)) type = 'swap';
+      else if (p && p.drones.length < 3 && this.pityDrone >= 3) type = 'drone';
       else if (p && p.shieldCharges < 3 && SF.chance(0.4)) type = 'shield';
       else if (p && p.drones.length < 3 && SF.chance(0.35)) type = 'drone';
       else if (p && p.reflectT <= 0 && SF.chance(0.25)) type = 'reflect';
       else if (g.lives <= 2 && SF.chance(0.3)) type = 'life';
       else type = SF.pick(['power', 'power', 'shield', 'swap', 'prism', 'swarm', 'gems']);
+      if (type === 'prism' || type === 'swarm') this.pityWeapon = 0;
+      else if (missingWeapon) this.pityWeapon++;
+      if (type === 'drone') this.pityDrone = 0;
+      else if (p) this.pityDrone++;
+      if (p && !missingWeapon) this.pityWeapon = 0;
       if (type === 'gems') {
         for (let i = 0; i < 4; i++) {
           g.pickups.push(new SF.Pickup(SF.W * SF.rand(0.42, 0.58), -20 - i * 18, 'gem'));
@@ -247,7 +269,7 @@
           if (p.t <= 0) {
             this.pending.splice(i, 1);
             if (p.kind === 'enemy') {
-              game.spawnEnemy(p.type, p.x, p.y, p.opts);
+              game.spawnEnemy(p.type, p.x, p.y, this.rollAffix(p.type, p.opts));
               this.spawnedCount++;
             } else if (p.kind === 'pickup') {
               this.spawnSupplyNow(p.type);
@@ -286,7 +308,7 @@
           p.t -= dt;
           if (p.t <= 0) {
             this.pending.splice(i, 1);
-            if (p.kind === 'enemy') game.spawnEnemy(p.type, p.x, p.y, p.opts);
+            if (p.kind === 'enemy') game.spawnEnemy(p.type, p.x, p.y, this.rollAffix(p.type, p.opts));
             else this.spawnSupplyNow(p.type);
           }
         }

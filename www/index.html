@@ -50,6 +50,7 @@
           <span class="boss-phase" id="bossPhase">P1</span>
         </div>
         <div class="boss-track"><i id="bossFill"></i><span class="boss-ticks" aria-hidden="true"></span></div>
+        <div class="boss-break" id="bossBreak" aria-hidden="true"><i></i></div>
         <span class="boss-pattern" id="bossPattern"></span>
       </div>
 
@@ -88,7 +89,7 @@
         </div>
       </footer>
 
-      <div class="announce" id="announce">
+      <div class="announce" id="announce" role="status" aria-live="polite">
         <span class="announce-rule"></span>
         <div class="announce-copy">
           <strong id="announceTitle"></strong>
@@ -115,7 +116,7 @@
           </h1>
           <p class="tagline">穿过裂隙，在弹幕之间起舞。</p>
           <div class="feature-chips" aria-label="核心内容">
-            <span>12 种敌机</span><span>22 种 Boss 招式</span><span>3 条武器线 ×5 级</span><span>4 类僚机</span><span>3 层护盾</span>
+            <span>12 种敌机 · 3 词缀</span><span>22 种 Boss 招式 · 破防</span><span>相位冲刺</span><span>3 条武器线 ×5 级</span><span>4 类僚机 · 3 层护盾</span>
           </div>
         </div>
 
@@ -150,7 +151,7 @@
           <div class="control-hint"><span class="hint-key">冲刺</span><span>穿弹短暂无敌</span></div>
         </div>
 
-        <p class="menu-foot">v2.7.6 · 精准模式 / 擦弹经济 / 过关奖励 / 蓄能换线</p>
+        <p class="menu-foot">v2.8.0 · 精准模式 / 擦弹经济 / 过关奖励 / 蓄能换线</p>
       </div>
     </section>
 
@@ -216,6 +217,8 @@
           <div><span>巡航时长</span><b id="finalTime">00:00</b></div>
           <div><span>擦弹</span><b id="finalGraze">0</b></div>
           <div><span>星爆释放</span><b id="finalNovas">0</b></div>
+          <div><span>相位穿越</span><b id="finalPhases">0</b></div>
+          <div><span>核心破防</span><b id="finalBreaks">0</b></div>
           <div><span>受创</span><b id="finalHits">0</b></div>
           <div><span>最高倍率</span><b id="finalMult">×1</b></div>
         </div>

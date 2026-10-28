@@ -26,9 +26,12 @@
       this.friendly = !!opts.friendly;
       this.r = opts.r || (this.kind === 'heavy' ? 10 : this.kind === 'bolt' ? 5 : 6);
       this.dmg = opts.dmg || 1;
+      // 对巨构目标的额外伤害倍率（棱镜贯穿的武器身份）
+      this.bossBonus = opts.bossBonus || 1;
       this.life = opts.life || 8;
       this.maxLife = this.life;
       this.grazed = false;
+      this.phased = false;
       this.age = 0;
       this.angle = Math.atan2(vy, vx) + Math.PI / 2;
       this.spin = opts.spin || 0;
@@ -153,7 +156,7 @@
       }
 
       this.trailT -= dt;
-      if (this.trailT <= 0 && SF.Game && !SF.Game.settings.lowFx) {
+      if (this.trailT <= 0 && SF.Game && !SF.Game.lowFx()) {
         const special = this.kind === 'needle' || this.kind === 'wave' || this.kind === 'plasma'
           || this.kind === 'lance' || this.kind === 'micro' || this.kind === 'beam';
         if (special) {
@@ -188,6 +191,18 @@
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         SF.Art.drawGlow(ctx, this.x, this.y, 30 * sc, P.violet, 0.18);
+        ctx.restore();
+      }
+      if (!this.friendly && SF.Game && SF.Game.highContrast) {
+        // 高对比偏好下给敌弹加白色外圈，低视力/强光环境更容易读弹
+        const rr = spr._w * 0.5 * sc + 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = 'rgba(255,255,255,.55)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, rr, 0, TAU);
+        ctx.stroke();
         ctx.restore();
       }
       SF.Art.drawSprite(ctx, spr, this.x, this.y, a, sc);
@@ -844,7 +859,8 @@
       const detune = w && w.detuned ? 1.45 : 1;
       const table = {
         pulse: [0.120, 0.108, 0.098, 0.090, 0.082],
-        prism: [0.380, 0.350, 0.320, 0.300, 0.270],
+        // 棱镜抬升到与另外两条线同一 DPS 量级，单发重击与对巨构加成保留为身份
+        prism: [0.360, 0.330, 0.305, 0.280, 0.245],
         swarm: [0.250, 0.210, 0.180, 0.160, 0.145],
       };
       return (table[this.activeWeapon] || table.pulse)[lv - 1] * od * detune;
@@ -872,6 +888,7 @@
           turn: opts.turn || 2.4,
           lockDelay: opts.lockDelay || 0,
           scale: opts.scale || 1,
+          bossBonus: opts.bossBonus || 1,
           tint: opts.tint || line.tint,
         }));
       };
@@ -882,14 +899,14 @@
         // volley is too sparse to carpet a wide swarm.
         const b = [4, 4, 5, 6, 6][lv - 1];
         const pierce = [1, 1, 2, 2, 3][lv - 1];
-        fire(bx, by - 4, 0, -sp, { kind: 'lance', r: 8, dmg: dmg(b), pierce, life: 3 });
+        fire(bx, by - 4, 0, -sp, { kind: 'lance', r: 8, dmg: dmg(b), pierce, life: 3, bossBonus: 1.18 });
         if (lv >= 2) {
-          fire(bx - 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3 });
-          fire(bx + 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3 });
+          fire(bx - 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3, bossBonus: 1.18 });
+          fire(bx + 10, by + 2, 0, -sp * 0.97, { kind: 'lance', r: 6, dmg: dmg(Math.max(2, b - 1)), pierce, life: 3, bossBonus: 1.18 });
         }
         if (lv >= 4) {
-          fire(bx - 20, by + 6, -95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3 });
-          fire(bx + 20, by + 6, 95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3 });
+          fire(bx - 20, by + 6, -95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3, bossBonus: 1.18 });
+          fire(bx + 20, by + 6, 95, -sp * 0.94, { kind: 'lance', r: 5, dmg: dmg(Math.max(2, b - 2)), pierce: 1, life: 3, bossBonus: 1.18 });
         }
       } else if (mode === 'swarm') {
         // Mid speed, mid damage, and they never miss: micro seekers that only
@@ -1183,11 +1200,27 @@
       this.tier = Math.min(3, Math.floor((this.sector - 1) / 5));
       this.size = def.size * (this.elite ? 1.22 : 1);
       this.maxHp = Math.round(def.hp * (1 + (this.sector - 1) * 0.16) * (this.elite ? 2.4 : 1));
+      // 精英词缀：同一套敌机轮廓，靠装甲/急速/爆裂改变解法
+      this.affix = ['armored', 'rapid', 'volatile'].includes(opts.affix) ? opts.affix : null;
+      this.fireMul = 1;
+      if (this.affix === 'armored') {
+        this.maxHp = Math.round(this.maxHp * 1.45);
+        this.size *= 1.06;
+        this.fireMul = 1.12;
+      } else if (this.affix === 'rapid') {
+        this.size *= 0.92;
+        this.fireMul = 0.72;
+      } else if (this.affix === 'volatile') {
+        this.maxHp = Math.max(1, Math.round(this.maxHp * 0.9));
+      }
       this.hp = this.maxHp;
-      this.score = Math.round(def.score * (this.elite ? 3.2 : 1));
-      this.color = this.elite ? P.gold : def.color;
+      this.score = Math.round(def.score * (this.elite ? 3.2 : 1) * (this.affix ? 1.18 : 1));
+      this.color = this.elite ? P.gold : (this.affix === 'armored' ? P.steel : def.color);
       this.accent = def.accent;
-      this.glowColor = this.elite ? P.gold : def.glow;
+      this.glowColor = this.elite ? P.gold
+        : this.affix === 'armored' ? P.steel
+          : this.affix === 'rapid' ? P.gold
+            : this.affix === 'volatile' ? P.rose : def.glow;
       this.x = x;
       this.baseX = x;
       this.y = y;
@@ -1323,7 +1356,7 @@
           if (this.chargeT <= 0) {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * this.fireMul * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
             this.chargeT = 0;
           }
         } else if (this.fireTimer <= 0) {
@@ -1333,7 +1366,7 @@
           } else {
             this.fire(this.sector);
             const base = def.fireCd;
-            this.fireTimer = SF.rand(base[0], base[1]) * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
+            this.fireTimer = SF.rand(base[0], base[1]) * this.fireMul * Math.max(0.7, 1 - this.tier * 0.1) * (this.elite ? 0.82 : 1) * (SF.Game && SF.Game.diff ? SF.Game.diff.enemyRate : 1);
           }
         }
       }
@@ -1437,7 +1470,8 @@
 
     hit(dmg, x, y) {
       if (this.dead || !this.targetable()) return false;
-      this.hp -= dmg;
+      // 装甲词缀吃伤害更少，但体型/血量更大，逼玩家换索敌顺序
+      this.hp -= dmg * (this.affix === 'armored' ? 0.72 : 1);
       this.flash = 0.07;
       SF.Audio.sfx('hit');
       SF.Game.fx.impact(x || this.x, y || this.y, this.glowColor, this.size > 25 ? 1.35 : 1);
@@ -1471,6 +1505,39 @@
         }
       }
       SF.Art.drawEnemy(ctx, this, t);
+      if (this.affix) {
+        // 词缀标记：装甲=青色弧段、急速=金色双箭头、爆裂=玫红虚线环
+        const ac = this.affix === 'armored' ? P.steel : this.affix === 'rapid' ? P.gold : P.rose;
+        const r = this.size * 1.08;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = SF.hexA(ac, 0.7);
+        ctx.lineWidth = 1.1;
+        if (this.affix === 'armored') {
+          for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, r, i * (TAU / 3) + 0.2, i * (TAU / 3) + 0.95);
+            ctx.stroke();
+          }
+        } else if (this.affix === 'rapid') {
+          for (const dir of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(dir * r, -4);
+            ctx.lineTo(dir * (r + 5), 0);
+            ctx.lineTo(dir * r, 4);
+            ctx.stroke();
+          }
+        } else {
+          const k = 0.5 + Math.sin(t * 6) * 0.25;
+          ctx.strokeStyle = SF.hexA(ac, k);
+          ctx.setLineDash([3, 5]);
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, TAU);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       const showBar = this.elite || this.type === 'bulwark' || this.type === 'carrier';
       if (showBar && this.hp < this.maxHp) {
         const w = Math.max(24, this.size * 1.25);
@@ -1723,7 +1790,8 @@
       this.sector = sector;
       this.tier = Math.min(3, Math.floor((sector - 1) / 5));
       this.size = def.size;
-      this.maxHp = Math.round(def.hp * (1 + (sector - 1) * 0.85) * (SF.Game && SF.Game.diff ? SF.Game.diff.bossHp : 1));
+      // 血量曲线封顶：玩家火力在 5 级后不再成长，Boss 不应无限变厚
+      this.maxHp = Math.round(def.hp * (1 + Math.min(3.4, (sector - 1) * 0.70)) * (SF.Game && SF.Game.diff ? SF.Game.diff.bossHp : 1));
       this.hp = this.maxHp;
       this.glowColor = def.color;
       this.x = SF.W / 2;
@@ -1750,6 +1818,11 @@
       this.idleCd = 0.8;
       this.dive = null;
       this.desperate = false;
+      // 破防槽：持续输出攒满后 Boss 停招 1.2 秒，期间受到额外伤害
+      this.staggerMax = Math.max(60, Math.round(this.maxHp * 0.18));
+      this.stagger = 0;
+      this.broken = 0;
+      this.breaks = 0;
     }
 
     get radius() { return this.size * 0.8; }
@@ -1807,6 +1880,8 @@
         this.seqIdx = 0;
         this.mercy = 1.15;
         this.attackCd = 1.15;
+        this.stagger = 0;
+        this.broken = 0;
         SF.Game.onBossPhase(this);
         SF.Game.fx.ring(this.x, this.y, this.def.color, this.size * 0.6, 0.7, this.size * 3);
         SF.Game.fx.rays(this.x, this.y, this.def.color, 12, this.size * 2.6, 0.55);
@@ -1832,7 +1907,14 @@
         this.y = this.targetY + Math.sin(this.t * 1.1) * (this.phase === 3 ? 12 : 7);
       }
 
-      if (this.attack) {
+      if (this.broken > 0) {
+        this.broken -= dt;
+        if (this.broken <= 0) {
+          this.broken = 0;
+          this.attackLabel = '';
+          this.attackCd = Math.min(this.attackCd, 0.55);
+        }
+      } else if (this.attack) {
         this.updateAttack(dt);
       } else {
         this.attackCd -= dt;
@@ -2359,13 +2441,29 @@
 
     hit(dmg) {
       if (this.entering || this.dying) return;
-      this.hp -= dmg;
+      // 破防窗口内受到 1.35 倍伤害，奖励攒槽后的爆发
+      const actual = dmg * (this.broken > 0 ? 1.35 : 1);
+      this.hp -= actual;
       this.flash = 0.055;
       if (this.hp <= 0) {
         this.hp = 0;
         this.dying = true;
         this.attack = null;
         SF.Game.onBossDying(this);
+        return;
+      }
+      if (this.broken <= 0) {
+        this.stagger += actual;
+        if (this.stagger >= this.staggerMax) {
+          this.stagger = 0;
+          this.broken = 1.2;
+          this.breaks++;
+          this.attack = null;
+          this.attackLabel = '核心破防';
+          this.lockMove = false;
+          this.telegraphing = false;
+          SF.Game.onBossBreak(this);
+        }
       }
     }
 

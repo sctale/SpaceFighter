@@ -19,7 +19,7 @@
       this.ready = false;
       this.bestValue = 0;
       this.bestSectorValue = 1;
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '', bossBreak: -1, bossBroken: null };
       this.announceTimer = null;
       this.hintTimer = null;
       this.toastTimer = null;
@@ -39,13 +39,13 @@
         comboBox: $('comboBox'), comboMult: $('comboMult'), comboCount: $('comboCount'), comboFill: $('comboFill'),
         novaPct: $('novaPct'), dashPct: $('dashPct'),
         progress: $('dashProgress'), progressFill: $('dashProgressFill'),
-        bossPanel: $('bossPanel'), bossName: $('bossName'), bossTitle: $('bossTitle'), bossPhase: $('bossPhase'), bossFill: $('bossFill'), bossPattern: $('bossPattern'),
+        bossPanel: $('bossPanel'), bossName: $('bossName'), bossTitle: $('bossTitle'), bossPhase: $('bossPhase'), bossFill: $('bossFill'), bossBreak: $('bossBreak'), bossPattern: $('bossPattern'),
         announce: $('announce'), announceTitle: $('announceTitle'), announceSub: $('announceSub'),
         hint: $('gameHint'), toast: $('toast'),
         menuBest: $('menuBest'), menuSector: $('menuSector'),
         screenMenu: $('screenMenu'), screenPause: $('screenPause'), screenOver: $('screenOver'),
         finalScore: $('finalScore'), finalSector: $('finalSector'), finalKills: $('finalKills'),
-        finalGraze: $('finalGraze'), finalNovas: $('finalNovas'), finalHits: $('finalHits'), finalMult: $('finalMult'),
+        finalGraze: $('finalGraze'), finalNovas: $('finalNovas'), finalPhases: $('finalPhases'), finalBreaks: $('finalBreaks'), finalHits: $('finalHits'), finalMult: $('finalMult'),
         rankRule: $('rankRule'), resultBuild: $('resultBuild'),
         finalChain: $('finalChain'), finalTime: $('finalTime'), newRecord: $('newRecord'), overSub: $('overSub'),
         resultRank: $('resultRank'),
@@ -187,9 +187,14 @@
       if (!p || !this.el.buildSummary) return;
       const droneLabels = { gunner: '脉冲', lance: '棱镜', aegis: '守护', swarm: '蜂群' };
       const chips = [];
-      const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
-      chips.push(`<span class="is-weapon">${names[p.level - 1] || names[0]} LV.${p.level}</span>`);
-      if (p.unlockedWeapons().length > 1) chips.push(`<span>武器 ${p.unlockedWeapons().length}/3</span>`);
+      // 三条武器线一起展示，暂停时能直接比较蓄能与定位
+      const roles = { pulse: '速射', prism: '贯穿', swarm: '追踪' };
+      const short = { pulse: '脉冲', prism: '棱镜', swarm: '蜂群' };
+      for (const k of ['pulse', 'prism', 'swarm']) {
+        const w = p.weapons[k];
+        const cls = ['is-weapon', k === p.activeWeapon ? 'is-active' : '', w.unlocked ? '' : 'is-locked'].filter(Boolean).join(' ');
+        chips.push(`<span class="${cls}">${short[k]} ${roles[k]} ${w.unlocked ? 'LV.' + w.level : '未解锁'}</span>`);
+      }
       if (p.shieldCharges > 0) chips.push(`<span class="is-shield">护盾 ${p.shieldCharges}/3</span>`);
       if (p.reflectT > 0) chips.push(`<span class="is-shield">力场 ${Math.ceil(p.reflectT)}s</span>`);
       p.drones.forEach((d) => chips.push(`<span>僚机 ${droneLabels[d.kind] || d.kind}</span>`));
@@ -209,7 +214,7 @@
     }
 
     resetRun() {
-      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '' };
+      this.cache = { score: -1, best: -1, sector: -1, lives: -1, weapon: -1, weaponMode: '', weaponMod: '', weaponCharge: -1, graze: -1, weaponDetuned: null, chargeLow: null, resonance: -1, shield: -1, progress: -1, nova: -1, dashText: '', ready: null, dash: -1, combo: -1, mult: -1, bossPhase: 0, bossDesperate: false, bossName: '', bossPattern: '', bossBreak: -1, bossBroken: null };
       this.el.bossPanel.hidden = true;
       this.el.comboBox.classList.remove('is-live');
       this.el.hint.classList.remove('is-show');
@@ -386,6 +391,18 @@
         }
         const fill = Math.max(0, b.hp / b.maxHp);
         el.bossFill.style.transform = 'scaleX(' + fill + ')';
+        const broken = b.broken > 0;
+        const breakPct = Math.round((broken ? 1 : Math.min(1, b.stagger / b.staggerMax)) * 100);
+        if (el.bossBreak) {
+          if (breakPct !== this.cache.bossBreak) {
+            el.bossBreak.style.setProperty('--b', breakPct / 100);
+            this.cache.bossBreak = breakPct;
+          }
+          if (broken !== this.cache.bossBroken) {
+            el.bossBreak.classList.toggle('is-broken', broken);
+            this.cache.bossBroken = broken;
+          }
+        }
         const phaseTag = 'P' + b.phase + (b.desperate ? '·临界' : '');
         if (b.phase !== this.cache.bossPhase || this.cache.bossDesperate !== !!b.desperate) {
           el.bossPhase.textContent = phaseTag;
@@ -393,7 +410,8 @@
           this.cache.bossPhase = b.phase;
           this.cache.bossDesperate = !!b.desperate;
         }
-        const pattern = b.attack ? (b.attackLabel || '') : (b.mercy > 0 ? '核心重载' : '蓄招');
+        const pattern = broken ? '核心破防 · 伤害窗口'
+          : b.attack ? (b.attackLabel || '') : (b.mercy > 0 ? '核心重载' : '蓄招');
         if (pattern !== this.cache.bossPattern) {
           el.bossPattern.textContent = pattern;
           el.bossPattern.classList.toggle('is-live', !!pattern);
@@ -514,6 +532,8 @@
       el.finalTime.textContent = SF.fmtTime(data.time);
       if (el.finalGraze) el.finalGraze.textContent = this.fmt(data.grazes || 0);
       if (el.finalNovas) el.finalNovas.textContent = data.novas || 0;
+      if (el.finalPhases) el.finalPhases.textContent = data.phases || 0;
+      if (el.finalBreaks) el.finalBreaks.textContent = data.breaks || 0;
       if (el.finalHits) el.finalHits.textContent = data.hits || 0;
       if (el.finalMult) el.finalMult.textContent = '×' + (data.maxMult || 1);
       el.newRecord.hidden = !data.newRecord;

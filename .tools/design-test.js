@@ -1042,6 +1042,185 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
     && diff.abyss.scoreMul > 1 && diff.cruise.scoreMul < 1
     && diff.abyss.nova < 1 && diff.cruise.nova > 1, diff);
 
+  /* ---------- 11. 五轮迭代：平衡、掉落保底、相位、词缀、破防、UI ---------- */
+  const iter = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    const out = {};
+    const clearFx = () => {
+      g.enemyBullets.length = 0;
+      g.playerBullets.length = 0;
+      g.enemies.length = 0;
+      g.pickups.length = 0;
+      g.boss = null;
+    };
+    // --- 掉落保底：连续 4 次补给内必出缺失武器 / 僚机 ---
+    const supplyTypes = (n) => {
+      const seq = [];
+      for (let i = 0; i < n; i++) {
+        g.pickups.length = 0;
+        g.director.supplyTimer = 0;
+        g.director.update(0.016);
+        const t = g.pickups.some((x) => x.type === 'swap') ? 'swap'
+          : g.pickups.some((x) => x.type === 'gem') ? 'gems'
+            : (g.pickups[0] ? g.pickups[0].type : 'none');
+        seq.push(t);
+      }
+      return seq;
+    };
+    g.director.state = 'waves';
+    g.director.script.length = 0;
+    g.director.pending.length = 0;
+    g.director.waveTimer = 999;
+    p.weapons.prism.unlocked = false;
+    p.weapons.swarm.unlocked = false;
+    p.level = 5;
+    p.drones.length = 3;
+    p.shieldCharges = 3;
+    p.reflectT = 10;
+    g.lives = 5;
+    p.swapIdle = 0;
+    g.director.pityWeapon = 0;
+    const weaponSeq = supplyTypes(6);
+    out.pityWeapon = { seq: weaponSeq, at: weaponSeq.findIndex((t) => t === 'prism' || t === 'swarm') };
+
+    p.weapons.prism.unlocked = true;
+    p.weapons.swarm.unlocked = true;
+    p.drones.length = 0;
+    p.shieldCharges = 3;
+    p.reflectT = 10;
+    g.director.pityDrone = 0;
+    const droneSeq = supplyTypes(6);
+    out.pityDrone = { seq: droneSeq, at: droneSeq.findIndex((t) => t === 'drone') };
+
+    // --- Boss 血量曲线封顶 ---
+    const b1 = new SF.Boss(1), b9 = new SF.Boss(9), b12 = new SF.Boss(12);
+    // 9 与 12 都是赫利俄斯（同基础血量），用来验证曲线封顶
+    out.bossScale = { b1: b1.maxHp, b9: b9.maxHp, b12: b12.maxHp, capped: b9.maxHp === b12.maxHp && b12.maxHp <= SF.BOSS_TYPES[2].hp * 4.5 };
+
+    // --- 棱镜对巨构增伤 ---
+    p.level = 5;
+    p.weapons.prism.level = 5;
+    p.activeWeapon = 'prism';
+    p.overdrive = 0;
+    g.playerBullets.length = 0;
+    p.shoot();
+    const lance = g.playerBullets.find((b) => b.kind === 'lance');
+    const giant = new SF.Boss(1);
+    giant.entering = false;
+    giant.maxHp = giant.hp = 1000;
+    giant.staggerMax = 1e9;
+    const beforeHp = giant.hp;
+    giant.hit(lance.dmg * lance.bossBonus);
+    out.prism = { bonus: lance.bossBonus, dealt: +(beforeHp - giant.hp).toFixed(2), base: lance.dmg };
+
+    // --- 相位冲刺 ---
+    clearFx();
+    p.x = SF.W / 2; p.y = SF.H * 0.6; p.invuln = 0; p.dashT = 0.17;
+    p.nova = 0; p.overdrive = 0; g.phases = 0;
+    const graze0 = g.grazes, score0 = g.score;
+    for (let i = 0; i < 6; i++) {
+      g.enemyBullets.push(new SF.Bullet(p.x + (i - 2.5) * 5, p.y + 2, 0, 0, { kind: 'orb', r: 6, life: 8 }));
+    }
+    g.collide();
+    out.phase = { phases: g.phases, nova: +p.nova.toFixed(1), grazes: g.grazes - graze0, score: g.score - score0 };
+
+    // --- 超频击杀延时 ---
+    clearFx();
+    p.overdrive = 3;
+    const eOd = g.spawnEnemy('drifter', p.x, SF.H * 0.3, { sector: 1 });
+    eOd.entryDelay = 0; eOd.age = 1; eOd.hp = 1;
+    g.killEnemy(eOd);
+    out.overdrive = { before: 3, after: +p.overdrive.toFixed(2) };
+
+    // --- 精英词缀 ---
+    clearFx();
+    const armored = g.spawnEnemy('drifter', SF.W * 0.4, SF.H * 0.3, { sector: 5, affix: 'armored' });
+    armored.entryDelay = 0; armored.age = 1;
+    const hp0 = armored.hp;
+    armored.hit(10, armored.x, armored.y);
+    const rapid = g.spawnEnemy('drifter', SF.W * 0.5, SF.H * 0.3, { sector: 5, affix: 'rapid' });
+    const volatile = g.spawnEnemy('drifter', SF.W * 0.6, SF.H * 0.3, { sector: 5, affix: 'volatile' });
+    volatile.entryDelay = 0; volatile.age = 1; volatile.hp = 1;
+    g.killEnemy(volatile);
+    out.affix = {
+      armorLoss: +(hp0 - armored.hp).toFixed(1),
+      rapidMul: rapid.fireMul,
+      volatileBullet: g.enemyBullets.some((b) => b.kind === 'plasma' && b.fuse > 0 && b.fuse <= 0.5),
+    };
+
+    // --- Boss 破防 ---
+    clearFx();
+    g.sector = 5;
+    g.spawnBoss();
+    const b = g.boss;
+    b.entering = false; b.y = b.targetY;
+    b.maxHp = b.hp = 4000;
+    b.staggerMax = 100; b.stagger = 0; b.broken = 0; b.breaks = 0;
+    g.bossBreaks = 0;
+    b.hit(120);
+    const hpBeforeBroken = b.hp;
+    b.hit(10);
+    out.break = {
+      broken: b.broken > 0, breaks: b.breaks, attack: b.attack,
+      dealt: +(hpBeforeBroken - b.hp).toFixed(2), bossBreaks: g.bossBreaks,
+    };
+    for (let i = 0; i < 80; i++) b.update(1 / 60);
+    out.break.after = b.broken;
+    b.broken = 1.2;
+    g.boss = b;
+    g.ui.update(g);
+    out.breakUI = {
+      cls: document.getElementById('bossBreak').classList.contains('is-broken'),
+      pattern: document.getElementById('bossPattern').textContent,
+      pct: document.getElementById('bossBreak').style.getPropertyValue('--b'),
+    };
+    b.broken = 0;
+
+    // --- 暂停装配摘要 / 星区预告 / 结算新统计 ---
+    p.weapons.prism.unlocked = true;
+    p.weapons.swarm.unlocked = false;
+    p.activeWeapon = 'pulse';
+    p.level = 4; p.weapons.pulse.level = 4;
+    g.ui.renderBuildSummary();
+    out.summary = document.getElementById('buildSummary').textContent;
+    g.boss = null;
+    g.sector = 2;
+    g.advanceSector();
+    out.threat = document.getElementById('announceSub').textContent;
+    g.ui.showResult({
+      score: 1234, sector: 3, kills: 9, maxCombo: 6, time: 61000, grazes: 12,
+      novas: 2, phases: 7, breaks: 3, hits: 1, maxMult: 2,
+      build: { weapons: [{ k: 'pulse', lv: 4 }], drones: [] }, newRecord: false,
+    });
+    out.result = {
+      phases: document.getElementById('finalPhases').textContent,
+      breaks: document.getElementById('finalBreaks').textContent,
+    };
+
+    // --- 低帧自动降特效 ---
+    g.autoLowFx = false;
+    g.slowFrameTime = 0;
+    for (let i = 0; i < 80; i++) g.trackPerformance(0.05);
+    out.autoFx = { auto: g.autoLowFx, low: g.lowFx() };
+    g.resetAutoFx();
+    out.contrast = typeof g.highContrast === 'boolean';
+    return out;
+  });
+  fail('pity guarantees a missing weapon within 4 crates', iter.pityWeapon.at >= 0 && iter.pityWeapon.at <= 3, iter.pityWeapon);
+  fail('pity guarantees a wingman within 4 crates', iter.pityDrone.at >= 0 && iter.pityDrone.at <= 3, iter.pityDrone);
+  fail('boss hp curve stops growing late game', iter.bossScale.capped, iter.bossScale);
+  fail('prism lances hit giants harder', iter.prism.bonus >= 1.15 && iter.prism.dealt > iter.prism.base, iter.prism);
+  fail('phase dash pays nova and score', iter.phase.phases === 6 && iter.phase.nova > 0 && iter.phase.score > 0 && iter.phase.grazes === 6, iter.phase);
+  fail('overdrive kills extend the burst window', iter.overdrive.after > 3, iter.overdrive);
+  fail('elite affixes change defense, rate and death', iter.affix.armorLoss === 7.2 && iter.affix.rapidMul < 1 && iter.affix.volatileBullet, iter.affix);
+  fail('boss stagger opens a break window', iter.break.broken && iter.break.breaks === 1 && iter.break.attack === null && iter.break.dealt > 13 && iter.break.bossBreaks === 1 && iter.break.after === 0, iter.break);
+  fail('boss break shows on the HUD', iter.breakUI.cls && iter.breakUI.pattern.includes('核心破防') && iter.breakUI.pct === '1', iter.breakUI);
+  fail('pause summary compares all weapon lines', iter.summary.includes('速射') && iter.summary.includes('贯穿') && iter.summary.includes('追踪') && iter.summary.includes('未解锁'), iter.summary);
+  fail('sector intro previews the boss', iter.threat.includes('巨构') && iter.threat.includes('赫利俄斯'), iter.threat);
+  fail('result card shows phase and break stats', iter.result.phases === '7' && iter.result.breaks === '3', iter.result);
+  fail('low frame time auto-reduces effects', iter.autoFx.auto === true && iter.autoFx.low === true, iter.autoFx);
+  fail('high-contrast preference is wired', iter.contrast === true, iter.contrast);
+
   console.log('\nERRORS', errors.length, errors.slice(0, 6).join('\n---\n'));
   console.log('ASSERTIONS', failures === 0 ? 'ALL PASS' : failures + ' FAILED');
   await browser.close();
