@@ -402,6 +402,61 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   fail('every sector clear hands out a swap crate, and the row stays on screen',
     swapDrops.hasSwap && swapDrops.lootCount >= 5 && swapDrops.offscreen === 0, swapDrops);
 
+  // Review pass regressions: the sky used to freeze during play, mashing the swap key
+  // farmed resonance, drops expired mid-screen, the result card always read ×1, and a
+  // weak slow-mo could downgrade a strong one.
+  const review = await page.evaluate(() => {
+    const g = __SF.game, p = g.player;
+    const out = {};
+    const bg0 = g.bg.t;
+    for (let i = 0; i < 30; i++) g.updatePlaying(1 / 60);
+    out.bgAdvance = +(g.bg.t - bg0).toFixed(3);
+
+    for (const k of ['pulse', 'prism', 'swarm']) {
+      p.weapons[k].unlocked = true; p.weapons[k].level = 3;
+      p.weapons[k].charge = 100; p.weapons[k].detuned = false;
+    }
+    p.selectWeapon('pulse'); p.resonance = 0; p.resT = 0;
+    p.swapIdle = 0;
+    p.selectWeapon('prism'); p.selectWeapon('pulse'); p.selectWeapon('prism');
+    out.mashRes = p.resonance;
+    p.resonance = 0; p.selectWeapon('pulse');
+    for (let i = 0; i < 90; i++) p.update(1 / 60, g.input);   // dwell 1.5s
+    p.selectWeapon('prism');
+    out.timedRes = p.resonance;
+
+    const drop = new SF.Pickup(SF.W * 0.5, -26, 'swap');
+    let alive = true;
+    for (let i = 0; i < 60 * 30 && alive; i++) alive = drop.update(1 / 60, null);
+    out.supplyReach = Math.round(drop.y);
+
+    g.combo = 35; g.maxCombo = 35;
+    g.updatePlaying(1 / 60);
+    out.peakMult = g.maxMult;
+    g.combo = 0;
+
+    g.slowTimer = 0; g.slowScale = 1;
+    g.slowmo(3, 0.35); g.slowmo(0.2, 0.9);
+    out.slowScale = g.slowScale;
+
+    const h0 = g.hintTime;
+    g.boss = new SF.Boss(1);
+    for (let i = 0; i < 30; i++) g.updatePlaying(1 / 60);
+    out.hintHeld = +(g.hintTime - h0).toFixed(2);
+    g.boss = null;
+    for (let i = 0; i < 30; i++) g.updatePlaying(1 / 60);
+    out.hintResumed = +(g.hintTime - h0).toFixed(2);
+    return out;
+  });
+  fail('the parallax sky advances while playing', review.bgAdvance > 0.3, review);
+  fail('mashing swap does not farm resonance, a timed swap still stacks',
+    review.mashRes === 0 && review.timedRes === 1, review);
+  fail('drops reach the hull before expiring', review.supplyReach > 900, review);
+  fail('peak multiplier is kept for the result card', review.peakMult >= 8, review);
+  fail('a weak slow-mo cannot downgrade a strong one', review.slowScale === 0.35, review);
+  fail('tutorial clock pauses during boss fights and resumes after',
+    review.hintHeld === 0 && review.hintResumed > 0.3, review);
+
   const skies = await page.evaluate(() => {
     const g = __SF.game;
     const hashes = [];
