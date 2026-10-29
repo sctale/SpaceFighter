@@ -152,8 +152,10 @@ kbd {
 .stage-warn.is-on { opacity: 1; visibility: visible; animation: warnPulse 0.9s ease-in-out infinite; }
 @keyframes warnPulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 /* last hull: rose edges pulse so a one-life run reads at a glance */
-body.is-low-hull .stage-vignette { box-shadow: inset 0 0 70px rgba(255, 111, 145, 0.4); }
-body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinite; }
+body.is-low-hull .stage-vignette {
+  box-shadow: inset 0 0 70px rgba(255, 111, 145, 0.4);
+  animation: hullPulse 1.6s ease-in-out infinite;
+}
 @keyframes hullPulse { 0%,100% { box-shadow: inset 0 0 46px rgba(255,111,145,.22); } 50% { box-shadow: inset 0 0 92px rgba(255,111,145,.5); } }
 .stage-scan {
   position: absolute;
@@ -922,7 +924,7 @@ body.is-low-hull .stage-vignette { animation: hullPulse 1.6s ease-in-out infinit
 }
 .announce.is-alert .announce-copy strong { color: var(--rose); text-shadow: 0 0 30px rgba(255, 111, 145, 0.45); }
 .announce.is-alert .announce-copy em { color: var(--gold); }
-.announce.is-alert + .hint { opacity: 0; }
+.announce.is-alert.is-show + .hint { opacity: 0; }
 
 .hint {
   position: absolute;

@@ -360,6 +360,9 @@
   // trigger, so it comes back as soon as it holds a real charge.
   const DETUNE_REARM = 100;
   const DETUNE_CLEAR = 55;
+  // Minimum time on a line before a swap may stack resonance: mashing the swap
+  // key used to farm the whole chain in a second.
+  const SWAP_RESONANCE_GAP = 1.2;
   // Vent speed is tied to drain, so every line spends ~1/3 of its cycle rearming
   // instead of one line being punished far harder than another.
   const VENT_RATIO = 2.4;
@@ -540,11 +543,14 @@
       this.weapons[this.activeWeapon].level = this.level;
       this.activeWeapon = name;
       this.level = target.level;
+      // read the dwell time before this swap resets it
+      const wellTimed = this.swapIdle >= SWAP_RESONANCE_GAP;
       this.swapIdle = 0;
       this.fireTimer = Math.min(this.fireTimer, 0.07);
       // Rotating onto a healthy line stacks resonance; rotating onto a dry one
-      // buys nothing, so the swap has to be timed.
-      if (target.charge >= DETUNE_CLEAR && !target.detuned) {
+      // buys nothing, so the swap has to be timed. Swapping faster than the chain
+      // can breathe (same frame, double-tap) drops it instead of farming it.
+      if (wellTimed && target.charge >= DETUNE_CLEAR && !target.detuned) {
         this.resonance = Math.min(RESONANCE_MAX, this.resonance + 1);
         this.resT = RESONANCE_WINDOW;
       } else {
@@ -751,7 +757,8 @@
         this.lastMX = movedDX;
         this.lastMY = movedDY;
       }
-      this.bank = SF.damp(this.bank, clamp(movedDX / 6, -1, 1), 8, dt);
+      // per-frame pixels made the bank frame-rate dependent (half the tilt at 120Hz)
+      this.bank = SF.damp(this.bank, clamp(movedDX / Math.max(dt, 1e-3) / 420, -1, 1), 8, dt);
 
       if (this.after.length) {
         for (let i = this.after.length - 1; i >= 0; i--) {
@@ -1562,10 +1569,10 @@
     constructor(x, y, type) {
       this.x = x; this.y = y;
       this.type = type;
-      this.vy = type === 'gem' ? 50 : 38;
+      this.vy = type === 'gem' ? 66 : 60;
       this.t = Math.random() * 4;
       this.seed = Math.random() * 6;
-      this.life = type === 'life' ? 14 : 16;
+      this.life = 20;
       this.dead = false;
       this.magnet = type === 'gem' ? 170 : 130;
     }

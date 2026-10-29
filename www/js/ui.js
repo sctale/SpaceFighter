@@ -202,8 +202,8 @@
     }
 
     updateMenuStats() {
-      this.bestValue = SF.Storage.get('best', 0);
-      this.bestSectorValue = SF.Storage.get('bestSector', 1);
+      this.bestValue = SF.Storage.num('best', 0, 0, 99999999);
+      this.bestSectorValue = SF.Storage.num('bestSector', 1, 1, 999);
       this.el.menuBest.textContent = this.fmt(this.bestValue);
       this.el.menuSector.textContent = SF.pad2(this.bestSectorValue);
       this.el.best.textContent = this.fmt(this.bestValue);
@@ -279,8 +279,9 @@
         }
         if (w.detuned !== this.cache.weaponDetuned) {
           el.weaponChip.classList.toggle('is-detuned', w.detuned);
-          if (w.detuned) el.weaponName.textContent = '失谐排气';
-          else if (this.cache.weaponDetuned !== null) {
+          if (w.detuned) {
+            el.weaponName.textContent = '失谐排气';
+          } else if (this.cache.weaponDetuned !== null) {
             const names = WEAPON_NAMES[p.activeWeapon] || WEAPON_NAMES.pulse;
             el.weaponName.textContent = names[Math.min(p.level - 1, 4)];
             // A full vent is the only re-arm worth flashing for; swapping onto a
@@ -291,6 +292,8 @@
               el.weaponChip.classList.add('is-armed');
             }
           }
+          // the accessible name should describe the line the pill is showing
+          el.weaponChip.setAttribute('aria-label', '切换武器 · ' + el.weaponName.textContent);
           this.cache.weaponDetuned = w.detuned;
         }
         const chargeLow = !w.detuned && w.charge < 40;
@@ -449,6 +452,14 @@
         }
         if (flash) el.classList.add('is-new');
       });
+    }
+
+    // A held action ring is cleared from here when the run pauses or restarts,
+    // otherwise the button keeps its pressed look with no pointer on it.
+    releaseHolds() {
+      const el = this.el;
+      if (!el || !el.btnFocus) return;
+      [el.btnFocus, el.btnDash, el.btnNova].forEach((b) => b.classList.remove('is-held'));
     }
 
     announce(title, sub, opts) {

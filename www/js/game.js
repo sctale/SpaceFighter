@@ -37,12 +37,16 @@
       this.state = 'menu';
       const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
       const moreContrast = !!(window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches);
-      this.settings = Object.assign({ sound: true, shake: true, lowFx: reduceMotion, haptic: true, difficulty: 'standard' }, SF.Storage.get('settings', {}));
+      const saved = SF.Storage.get('settings', {});
+      this.settings = Object.assign({ sound: true, shake: true, lowFx: reduceMotion, haptic: true, difficulty: 'standard' },
+        saved && typeof saved === 'object' ? saved : {});
       this.highContrast = moreContrast;
       this.diff = SF.DIFFICULTY[this.settings.difficulty] || SF.DIFFICULTY.standard;
       this.viewScale = 1;
       this.lastTime = 0;
       this.runTime = 0;
+      this.maxMult = 1;
+      this.hintTime = 0;
       this.godMode = false;
       this.uiReady = false;
 
@@ -258,7 +262,7 @@
       SF.Audio.setMood('waves');
       SF.Audio.startMusic();
 
-      this.runStartBest = SF.Storage.get('best', 0);
+      this.runStartBest = SF.Storage.num('best', 0, 0, 99999999);
       this.resetRun();
       this.state = 'playing';
       this.input.clearPressed();
@@ -315,6 +319,8 @@
       this.maxCombo = 0;
       this.sector = 1;
       this.runTime = 0;
+      this.maxMult = 1;
+      this.hintTime = 0;
       this.shakeMag = 0;
       this.flashA = 0;
       this.freeze = 0;
@@ -334,6 +340,7 @@
       if (this.state !== 'playing') return;
       this.state = 'paused';
       if (this.input) this.input.touchFocus = false;
+      if (this.uiReady && this.ui.releaseHolds) this.ui.releaseHolds();
       SF.Audio.setPaused(true);
       this.input.clearPressed();
       if (this.uiReady) {
@@ -389,6 +396,9 @@
       if (this.state === 'over') return;
       this.state = 'over';
       this.deathTimer = 0;
+      // R/Enter pressed mid-run would otherwise be consumed by the over screen on
+      // its very first frame and restart before the result can be read
+      this.input.clearPressed();
       SF.Audio.stopMusic();
       SF.Audio.setIntensity(0);
       SF.Audio.setPaused(false);
@@ -396,7 +406,7 @@
       this.shakeMag = 0;
       this.flashA = 0;
 
-      const prevSector = SF.Storage.get('bestSector', 1);
+      const prevSector = SF.Storage.num('bestSector', 1, 1, 999);
       const newRecord = this.score > (this.runStartBest || 0);
       if (newRecord) SF.Storage.set('best', this.score);
       SF.Storage.set('bestSector', Math.max(prevSector, this.sector));
@@ -415,7 +425,7 @@
           phases: this.phases,
           breaks: this.bossBreaks,
           hits: this.hitsTaken,
-          maxMult: this.multiplier(),
+          maxMult: Math.max(1, this.maxMult),
           build: this.player ? {
             weapons: this.player.unlockedWeapons().map((k) => ({ k, lv: this.player.weapons[k].level })),
             drones: this.player.drones.map((d) => d.kind),
@@ -427,9 +437,9 @@
     }
 
     saveProgress() {
-      const prevBest = SF.Storage.get('best', 0);
+      const prevBest = SF.Storage.num('best', 0, 0, 99999999);
       if (this.score > prevBest) SF.Storage.set('best', this.score);
-      const prevSector = SF.Storage.get('bestSector', 1);
+      const prevSector = SF.Storage.num('bestSector', 1, 1, 999);
       SF.Storage.set('bestSector', Math.max(prevSector, this.sector));
       if (this.uiReady) this.ui.updateMenuStats();
     }
@@ -623,13 +633,21 @@
     }
 
     slowmo(duration, scale) {
+      // only a call that outlasts the current slow-mo may change its strength
+      if (duration >= this.slowTimer) this.slowScale = scale;
       this.slowTimer = Math.max(this.slowTimer, duration);
-      this.slowScale = scale;
     }
 
     /* ---------------- playing update ---------------- */
     updatePlaying(dt) {
       this.runTime += dt;
+      // the parallax sky used to advance only in the menu and on the game-over
+      // screen, so the whole starfield stood still during play
+      if (this.bg) this.bg.update(dt, { mode: 'game' });
+      // tutorials pause during boss fights: the clock they run on stops with them
+      if (!this.boss) this.hintTime += dt;
+      const liveMult = this.multiplier();
+      if (liveMult > this.maxMult) this.maxMult = liveMult;
       this.shakeMag *= Math.exp(-7.5 * dt);
       if (this.shakeMag < 0.15) this.shakeMag = 0;
       this.flashA *= Math.exp(-6.5 * dt);
@@ -655,7 +673,7 @@
       // hints
       if (this.hints && this.hints.length) {
         for (let i = this.hints.length - 1; i >= 0; i--) {
-          if (this.runTime >= this.hints[i].t) {
+          if (this.hintTime >= this.hints[i].t) {
             const h = this.hints.splice(i, 1)[0];
             if (this.uiReady) this.ui.hint(h.html, h.duration);
             if (h.t > 15 && this.input.hasTouch) {
@@ -1293,7 +1311,6 @@
       });
       this.enemies.length = 0;
       this.clearEnemyBullets(false);
-      this.hints = [];
     }
 
     spawnBoss() {
@@ -1394,6 +1411,7 @@
       this.boss = null;
       this.lasers.length = 0;
       this.enemyBullets.length = 0;
+      this.enemies.length = 0;
       this.director.onBossDefeated();
       this.sectorClearTimer = 4.4;
       this.slowTimer = 0;
@@ -1433,6 +1451,10 @@
 
     advanceSector() {
       this.sector++;
+      // nothing from the previous sector comes along, not even a stray escort
+      this.enemies.length = 0;
+      this.enemyBullets.length = 0;
+      this.lasers.length = 0;
       this.sectorStartTime = this.runTime;
       this.sectorHits = 0;
       this.sectorGrazes = 0;

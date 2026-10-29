@@ -55,6 +55,12 @@
     set(key, value) {
       try { localStorage.setItem('sf.' + key, JSON.stringify(value)); } catch (e) {}
     },
+    // stored blobs are user-editable and survive version changes: clamp on read
+    num(key, fallback, min, max) {
+      const v = Number(this.get(key, fallback));
+      if (!Number.isFinite(v)) return fallback;
+      return Math.min(max, Math.max(min, Math.round(v)));
+    },
   };
 
   SF.PALETTE = {
@@ -90,6 +96,10 @@
       window.addEventListener('keydown', (e) => {
         const k = e.key;
         const low = k.toLowerCase();
+        // a focused button owns Space/Enter — otherwise Space cannot activate it
+        const ae = document.activeElement;
+        const onControl = ae && /^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae !== document.body;
+        if (onControl && (low === ' ' || low === 'enter')) return;
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(low)) {
           if (low !== 'tab') e.preventDefault();
         }
@@ -233,6 +243,7 @@
       this.stepDur = 60 / 116 / 4;
       this.lastShoot = 0;
       this.lastGraze = 0;
+      this.lastHit = 0;
       this.paused = false;
     }
 
@@ -572,6 +583,8 @@
           this._tone('sawtooth', 300, 90, t, 0.1, 0.02);
           break;
         case 'hit':
+          if (now - this.lastHit < 45) return;
+          this.lastHit = now;
           this._noise(t, 0.05, 0.035, 'bandpass', 2600, 1400, 1.2);
           break;
         case 'graze':
