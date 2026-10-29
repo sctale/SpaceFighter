@@ -457,6 +457,18 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   fail('tutorial clock pauses during boss fights and resumes after',
     review.hintHeld === 0 && review.hintResumed > 0.3, review);
 
+  const lowHull = await page.evaluate(() => {
+    const g = __SF.game;
+    g.lives = 1;
+    g.ui.cache.lives = -1;
+    g.ui.update(g);
+    const inRun = document.body.classList.contains('is-low-hull');
+    g.ui.resetRun();
+    return { inRun, onMenu: document.body.classList.contains('is-low-hull') };
+  });
+  fail('the low-hull pulse stops when the run ends',
+    lowHull.inRun === true && lowHull.onMenu === false, lowHull);
+
   const skies = await page.evaluate(() => {
     const g = __SF.game;
     const hashes = [];

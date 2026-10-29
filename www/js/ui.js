@@ -221,6 +221,10 @@
       this.el.announce.classList.remove('is-show');
       if (this.announceTimer) clearTimeout(this.announceTimer);
       if (this.hintTimer) clearTimeout(this.hintTimer);
+      // the low-hull vignette is a body class maintained during play; returning to
+      // the menu with one life left used to keep the red pulse running there
+      this.cache.lowHull = false;
+      document.body.classList.remove('is-low-hull');
       this.updateMenuStats();
     }
 

@@ -133,7 +133,7 @@ npm run test:all         # 全部一起跑
 - Boss 战、帧率检查、90 秒跨星区压力模拟与 NaN 检测
 - 菜单脚注、`package.json`、Gradle `versionName/versionCode` 三方一致性
 
-`npm run test:design` 用同一份游戏对象做数值回归，70 项断言：
+`npm run test:design` 用同一份游戏对象做数值回归，71 项断言：
 
 - 僚机是否停在左右翼位（不绕圈）
 - 主机弹与僚机弹的弹种是否互不重叠
