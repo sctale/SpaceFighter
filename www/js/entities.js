@@ -622,12 +622,14 @@
       return type;
     }
 
+    // Escorts flank the hull, one per side. The old ±44 put them inside the swept
+    // wings, so two wingmen read as part of the ship instead of one on each side.
     droneSlot(index, count) {
-      if (count <= 1) return { x: -44, y: 14 };
-      if (count === 2) return index === 0 ? { x: -44, y: 14 } : { x: 44, y: 14 };
-      if (index === 0) return { x: -47, y: 10 };
-      if (index === 1) return { x: 47, y: 10 };
-      return { x: 0, y: 43 };
+      if (count <= 1) return { x: -64, y: 8 };
+      if (count === 2) return index === 0 ? { x: -64, y: 8 } : { x: 64, y: 8 };
+      if (index === 0) return { x: -68, y: 2 };
+      if (index === 1) return { x: 68, y: 2 };
+      return { x: 0, y: 48 };
     }
 
     addShield(n) {
@@ -796,7 +798,8 @@
       for (let i = 0; i < this.drones.length; i++) {
         const d = this.drones[i];
         const slot = this.droneSlot(i, this.drones.length);
-        const tx = this.x + slot.x;
+        // a hull hugging the screen edge must not shove its wingman off the field
+        const tx = clamp(this.x + slot.x, 18, SF.W - 18);
         const ty = this.y + slot.y;
         d.x = SF.damp(d.x, tx, 13, dt);
         d.y = SF.damp(d.y, ty, 13, dt);

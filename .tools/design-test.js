@@ -469,6 +469,30 @@ const step = (page, frames, perFrame) => page.evaluate(({ frames, perFrame }) =>
   fail('the low-hull pulse stops when the run ends',
     lowHull.inRun === true && lowHull.onMenu === false, lowHull);
 
+  // Escorts: one per side, clear of the hull, symmetric no matter how many.
+  const escortFormation = await page.evaluate(async () => {
+    const g = __SF.game, p = g.player;
+    const slot = (i, n) => p.droneSlot(i, n);
+    const two = [slot(0, 2), slot(1, 2)];
+    const three = [slot(0, 3), slot(1, 3), slot(2, 3)];
+    p.drones.length = 0;
+    p.x = SF.W * 0.5;
+    p.addDrone('gunner'); p.addDrone('lance');
+    for (let i = 0; i < 90; i++) p.update(1 / 60, g.input);
+    const live = p.drones.map((d) => Math.round(d.x - p.x));
+    p.drones.length = 0;
+    return {
+      two: two.map((s2) => s2.x), three: three.map((s2) => s2.x),
+      tailY: three[2].y - three[0].y, live,
+    };
+  });
+  fail('two wingmen fly one on each side, clear of the wings',
+    escortFormation.two[0] === -escortFormation.two[1] && Math.abs(escortFormation.two[0]) >= 60
+    && escortFormation.live.length === 2 && Math.sign(escortFormation.live[0]) === -Math.sign(escortFormation.live[1])
+    && Math.abs(escortFormation.live[0]) > 50, escortFormation);
+  fail('a third escort takes the tail slot',
+    escortFormation.three[0] === -escortFormation.three[1] && escortFormation.three[2] === 0 && escortFormation.tailY > 20, escortFormation);
+
   const skies = await page.evaluate(() => {
     const g = __SF.game;
     const hashes = [];
